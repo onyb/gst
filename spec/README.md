@@ -21,7 +21,13 @@ facts, documented here independently:
 | Section-wise CSV files | 2025-01 | GSTR-1 per-section CSV headers |
 | GSTR-3B Excel Utility | V5.8 | GSTR-3B form layout, upload JSON |
 
-Contains no code or creative content from those artifacts.
+Contains no code from those artifacts.
+
+One data file is reproduced verbatim: GSTN's own section-wise sample CSV for
+GSTR-1 B2B, kept at `crates/gst-core/examples/b2b-gstn-sample.csv` as a
+real-world input for the example runner. It is sample data, not
+implementation. Note that it no longer passes the official tool's current
+validation — see the corresponding `quirk` note in `gstr1/b2b.json`.
 
 ## Layout
 

@@ -12,6 +12,7 @@ repository = "https://github.com/onyb/gst"
 anyhow = "1"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 clap = { version = "4", features = ["derive"] }
+csv = "1"
 regex = "1"
 rust_decimal = { version = "1", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
