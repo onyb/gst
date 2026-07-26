@@ -29,3 +29,9 @@ target
 gst-offline-tool-unix/
 gst_offline_tool_win/
 extracted/
+
+# Generated output: the default -o directory for `gst generate` / `gst upload`,
+# and section CSVs the Sarvam extractor writes into the working directory.
+# Committed sample data lives in fixtures/, which these do not match.
+/out/
+/*.csv

@@ -59,19 +59,35 @@ Or build from source: `cargo install --locked --path crates/gst-cli`.
 
 ## Status
 
-Work in progress. The MVP targets GSTR-1 and GSTR-3B.
+Work in progress. The MVP targets GSTR-1 and GSTR-3B. 13 of the 30 GSTR-1
+worksheets are implemented, including both tables every filer must submit
+(HSN summary and documents issued).
 
-| Feature | Status |
+Output is structurally complete but **not yet verified against GSTN's own
+tool** — there is no differential test against a captured reference file, so
+treat generated JSON as ready to inspect rather than proven to upload.
+
+| GSTR-1 section | Sheets | Status |
+|---|---|---|
+| B2B invoices (B2B, B2BA) | 2 | ✅ |
+| B2C invoices (B2CL, B2CLA, B2CS, B2CSA) | 4 | ✅ |
+| Credit/debit notes (CDNR, CDNRA, CDNUR, CDNURA) | 4 | ✅ |
+| HSN summary (HSN B2B, HSN B2C) | 2 | ✅ |
+| Documents issued (DOCS) | 1 | ✅ |
+| Exports (EXP, EXPA) | 2 | ⏳ |
+| Advances (AT, ATA, ATADJ, ATADJA) | 4 | ⏳ |
+| Nil-rated and exempt (EXEMP) | 1 | ⏳ |
+| E-commerce (ECO and amendments) | 10 | ⏳ |
+| GSTR-3B | — | ⏳ |
+
+| Command | Status |
 |---|---|
-| GSTR-1: B2B invoices (B2B, B2BA) | Supported |
-| GSTR-1: B2C invoices (B2CL, B2CLA, B2CS, B2CSA) | Supported |
-| GSTR-1: credit/debit notes (CDNR, CDNRA, CDNUR, CDNURA) | Supported |
-| GSTR-1: exports (EXP, EXPA) | Pending |
-| GSTR-1: advances (AT, ATA, TXPD) | Pending |
-| GSTR-1: nil-rated, HSN summary, document series | Pending |
-| GSTR-3B | Pending |
-| `gst validate`, `gst generate` | Supported |
-| `gst summary`, `gst errors`, `gst diff` | Pending |
+| `gst validate` — problems with sheet, row and column | ✅ |
+| `gst upload` — complete portal file from one workbook | ✅ |
+| `gst generate` — one section's payload on its own | ✅ |
+| `gst summary` — section totals before uploading | ⏳ |
+| `gst errors` — map the portal's error file back to rows | ⏳ |
+| `gst diff` — semantic diff of two payloads | ⏳ |
 
 ## Provenance and licensing
 
