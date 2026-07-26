@@ -1,0 +1,21 @@
+{
+  "description": "Category codes for the nil-rated / exempted / non-GST table (GSTR-1 table 8). The label is what a workbook must contain; the code is what the payload carries. Beware that inter-state is 'INTR' and intra-state is 'INTRA' \u2014 one letter apart, with the longer code belonging to the shorter-sounding word. Order follows the template's dropdown.",
+  "types": [
+    {
+      "code": "INTRB2B",
+      "label": "Inter-State supplies to registered persons"
+    },
+    {
+      "code": "INTRAB2B",
+      "label": "Intra-State supplies to registered persons"
+    },
+    {
+      "code": "INTRB2C",
+      "label": "Inter-State supplies to unregistered persons"
+    },
+    {
+      "code": "INTRAB2C",
+      "label": "Intra-State supplies to unregistered persons"
+    }
+  ]
+}

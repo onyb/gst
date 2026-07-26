@@ -525,6 +525,7 @@ embedded_section!(GSTR1_CDNUR, "gstr1/cdnur.json");
 embedded_section!(GSTR1_CDNURA, "gstr1/cdnura.json");
 embedded_section!(GSTR1_EXP, "gstr1/exp.json");
 embedded_section!(GSTR1_EXPA, "gstr1/expa.json");
+embedded_section!(GSTR1_NIL, "gstr1/exemp.json");
 embedded_section!(GSTR1_DOC_ISSUE, "gstr1/docs.json");
 embedded_section!(GSTR1_HSN_B2B, "gstr1/hsn-b2b.json");
 embedded_section!(GSTR1_HSN_B2C, "gstr1/hsn-b2c.json");
@@ -544,6 +545,7 @@ pub fn sections() -> Vec<&'static SectionSpec> {
         &GSTR1_CDNURA,
         &GSTR1_EXP,
         &GSTR1_EXPA,
+        &GSTR1_NIL,
         &GSTR1_DOC_ISSUE,
         &GSTR1_HSN_B2B,
         &GSTR1_HSN_B2C,
@@ -767,6 +769,7 @@ mod tests {
                 "cdnura",
                 "exp",
                 "expa",
+                "nil",
                 "doc_issue",
                 "hsn(b2b)",
                 "hsn(b2c)"

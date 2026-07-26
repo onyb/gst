@@ -78,3 +78,12 @@ From the second capture, which added the import and mapping steps:
 - The tool's own mapping of `exp` and `expa` matches this implementation exactly:
   grouping by export type, the bare line-item shape with no `num` and no
   `itm_det`, and `WOPAY` zeroing both the tax and the cess.
+
+From a third capture, of a workbook with only one HSN half populated:
+
+- **Omit-empty is recursive.** A nested object drops its empty members rather
+  than carrying them as `[]`: an HSN section with only a B2B half emits
+  `"hsn": {"hsn_b2b": [...]}` with no `hsn_b2c` at all. This had been inferred
+  and flagged as unverified in the envelope spec, because the earlier captures
+  happened to populate both halves. This implementation already behaved this
+  way, and the one-sided file is byte-identical too.

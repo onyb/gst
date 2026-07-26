@@ -18,7 +18,7 @@ tool itself.
 **The output is byte-identical to the official tool's.**
 [`fixtures/golden/`](fixtures/golden/) holds a file captured by running GSTN's
 own tool over the same workbook, and a test asserts we reproduce it byte for
-byte — same 15 sections, same key order, same filename. That comparison is what
+byte — same 16 sections, same key order, same filename. That comparison is what
 turns "we read their code carefully" into something checkable, and it keeps
 earning its keep: it has so far corrected five things the source alone had told
 us wrong, including that empty sections are omitted rather than emitted as
@@ -74,11 +74,11 @@ Or build from source: `cargo install --locked --path crates/gst-cli`.
 
 ## Status
 
-Work in progress. The MVP targets GSTR-1 and GSTR-3B. 15 of the 30 GSTR-1
+Work in progress. The MVP targets GSTR-1 and GSTR-3B. 16 of the 30 GSTR-1
 worksheets are implemented, including both tables every filer must submit
 (HSN summary and documents issued).
 
-Output is **verified byte-for-byte against GSTN's own tool** for a 15-section
+Output is **verified byte-for-byte against GSTN's own tool** for a 16-section
 return — see [`fixtures/golden/`](fixtures/golden/) and
 `crates/gst-core/tests/golden_reference.rs`. The captured file is produced by
 driving the official tool's whole pipeline, from importing the workbook through
@@ -86,7 +86,7 @@ to writing the upload file, so the row-to-payload mapping is compared and not
 just the final packaging.
 
 Two honest bounds on that claim: the comparison covers one captured period with
-these 15 sections, so a section added later is unverified until a new file is
+these 16 sections, so a section added later is unverified until a new file is
 captured; and matching the official tool is not the same as the portal
 accepting the upload, which we have not tested.
 
@@ -99,7 +99,7 @@ accepting the upload, which we have not tested.
 | Documents issued (DOCS) | 1 | ✅ |
 | Exports (EXP, EXPA) | 2 | ✅ |
 | Advances (AT, ATA, ATADJ, ATADJA) | 4 | ⏳ |
-| Nil-rated and exempt (EXEMP) | 1 | ⏳ |
+| Nil-rated and exempt (EXEMP) | 1 | ✅ |
 | E-commerce (ECO and amendments) | 10 | ⏳ |
 | GSTR-3B | — | ⏳ |
 

@@ -1,0 +1,161 @@
+{
+  "$schema": "../section.schema.json",
+  "section": "nil",
+  "return": "gstr1",
+  "title": "Nil rated, exempted and non-GST outward supplies - 8",
+  "provenance": {
+    "offline_tool": "V3.2.4",
+    "excel_template": "GSTR1_Excel_Workbook_Template_V2.2.xlsx",
+    "csv_template": "Section_wise_CSV_files/GSTR1/exemp.csv",
+    "verified_on": "2026-07-26"
+  },
+  "source": {
+    "excel": {
+      "sheet": "exemp",
+      "header_row": 4,
+      "first_data_row": 5
+    },
+    "csv": {
+      "file": "exemp.csv",
+      "header_row": 1
+    }
+  },
+  "fields": [
+    {
+      "id": "sply_ty",
+      "column": "Description",
+      "order": 0,
+      "type": "text",
+      "required": true,
+      "enum": [
+        "Inter-State supplies to registered persons",
+        "Intra-State supplies to registered persons",
+        "Inter-State supplies to unregistered persons",
+        "Intra-State supplies to unregistered persons"
+      ],
+      "transform": "nil_supply_code",
+      "description": "Which of the four supply categories this row totals. Emitted as a code, not the label \u2014 see the transform note. There is no place of supply column: the description itself says whether the supply was inter- or intra-state."
+    },
+    {
+      "id": "nil_amt",
+      "column": "Nil Rated Supplies",
+      "order": 1,
+      "type": "decimal",
+      "required": false,
+      "default": 0,
+      "pattern": "^-?(\\d{0,11})(\\.\\d{0,2})?$",
+      "description": "Total nil-rated supplies in this category. Blank is treated as 0."
+    },
+    {
+      "id": "expt_amt",
+      "column": "Exempted(other than nil rated/non GST supply)",
+      "order": 2,
+      "type": "decimal",
+      "required": false,
+      "default": 0,
+      "pattern": "^-?(\\d{0,11})(\\.\\d{0,2})?$",
+      "description": "Total exempted supplies in this category, excluding nil-rated and non-GST. Blank is treated as 0. Note the column header has no space before the bracket and writes 'non GST' unhyphenated \u2014 it must be reproduced exactly."
+    },
+    {
+      "id": "ngsup_amt",
+      "column": "Non-GST Supplies",
+      "order": 3,
+      "type": "decimal",
+      "required": false,
+      "default": 0,
+      "pattern": "^-?(\\d{0,11})(\\.\\d{0,2})?$",
+      "description": "Total non-GST supplies in this category. Blank is treated as 0."
+    }
+  ],
+  "rules": [],
+  "grouping": {},
+  "output": {
+    "record": {
+      "keys": [
+        {
+          "key": "sply_ty",
+          "from": "field:sply_ty",
+          "description": "The category code: INTRB2B, INTRAB2B, INTRB2C or INTRAB2C."
+        },
+        {
+          "key": "expt_amt",
+          "from": "field:expt_amt"
+        },
+        {
+          "key": "nil_amt",
+          "from": "field:nil_amt"
+        },
+        {
+          "key": "ngsup_amt",
+          "from": "field:ngsup_amt"
+        }
+      ]
+    },
+    "derivations": [],
+    "derivation_notes": {}
+  },
+  "notes": [
+    {
+      "kind": "quirk",
+      "text": "The payload key order is NOT the column order. The template reads Nil, Exempted, Non-GST; the payload emits sply_ty, expt_amt, nil_amt, ngsup_amt \u2014 exempted before nil-rated. Emitting them in column order would produce a byte-different file.",
+      "affects": [
+        "output.record"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "The four category codes are dangerously similar: inter-state is 'INTR' and intra-state is 'INTRA', one letter apart, and the longer code is the SHORTER-sounding word. INTRB2B is an INTER-state supply. Any string matching over these codes has to be anchored or ordered longest-first, the same hazard as the section codes themselves.",
+      "affects": [
+        "sply_ty"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "All three amounts accept NEGATIVE values \u2014 the reference's pattern carries an optional leading minus, which most other sections' amount patterns do not. Nothing else constrains them, so a negative total imports cleanly.",
+      "affects": [
+        "nil_amt",
+        "expt_amt",
+        "ngsup_amt"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "Amounts are converted to a number BEFORE the pattern is applied, and that conversion is parseFloat, which stops at the first non-numeric character. A value typed with thousands separators such as '1,234,567' therefore becomes 1 and passes validation silently. Same underlying hazard as the non-global comma strip catalogued elsewhere, reached by a different route.",
+      "affects": [
+        "nil_amt",
+        "expt_amt",
+        "ngsup_amt"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "A blank cell and an explicit 0 are indistinguishable in the payload: the reference tests the raw cell for JS truthiness and falls back to 0, so both emit 0 and all three amount keys are always present. Unlike the B2C(Large) tables, no key is ever omitted here.",
+      "affects": [
+        "nil_amt",
+        "expt_amt",
+        "ngsup_amt"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "The reference's duplicate-row check for this section can never fire. It compares the Description LABEL against the stored sply_ty CODE, which never match, and reads two of its columns under misspelled names \u2014 'Exempted(other than nil rated/non-GST supply)' with a hyphen and 'Non-GST Supplies ' with a trailing space \u2014 both of which are undefined. Two rows carrying the same description are therefore always treated as disagreeing rather than merged. This implementation keeps one record per row in row order, which is what the reference actually produces for a well-formed sheet.",
+      "affects": [
+        "sply_ty"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "The header-presence check for this section is ORed rather than ANDed, so a sheet carrying just one of the four columns passes it. The per-row field validation still requires a recognised Description, so a sheet missing that column fails there instead.",
+      "affects": [
+        "source"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "This section is the only one whose payload sits inside a named wrapper: the upload file carries 'nil': {'inv': [...]} rather than a bare array. The section is also keyed 'nil' throughout the reference even though the worksheet is called 'exemp'.",
+      "affects": [
+        "output"
+      ]
+    }
+  ]
+}

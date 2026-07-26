@@ -45,6 +45,27 @@ pub struct InvoiceType {
     pub ui_label: String,
 }
 
+/// A category in the nil-rated / exempted / non-GST table, label to code.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct NilSupplyType {
+    pub code: String,
+    pub label: String,
+}
+
+#[derive(Deserialize)]
+struct NilSupplyTypesFile {
+    types: Vec<NilSupplyType>,
+}
+
+/// Resolve a workbook's supply-category label to its payload code.
+pub fn nil_supply_code(label: &str) -> Option<&'static str> {
+    let label = label.trim();
+    NIL_SUPPLY_TYPES
+        .iter()
+        .find(|t| t.label == label)
+        .map(|t| t.code.as_str())
+}
+
 /// B2B invoice types: table 4 (B2B/SEZ/DE) and the ECO table 15 variant.
 #[derive(Debug, Clone, Deserialize)]
 pub struct InvoiceTypes {
@@ -174,6 +195,15 @@ pub fn uqc_code(label: &str) -> String {
     }
 }
 
+/// Categories of the nil-rated / exempted / non-GST table.
+pub static NIL_SUPPLY_TYPES: LazyLock<Vec<NilSupplyType>> = LazyLock::new(|| {
+    embedded::<NilSupplyTypesFile>(
+        "nil-supply-types.json",
+        include_str!("../../../spec/masters/nil-supply-types.json"),
+    )
+    .types
+});
+
 /// Natures of document, in the order that defines their payload numbering.
 pub static DOCUMENT_TYPES: LazyLock<Vec<String>> = LazyLock::new(|| {
     embedded::<DocumentTypesFile>(
@@ -210,6 +240,10 @@ const MASTER_FILES: &[(&str, &str)] = &[
     (
         "document-types.json",
         include_str!("../../../spec/masters/document-types.json"),
+    ),
+    (
+        "nil-supply-types.json",
+        include_str!("../../../spec/masters/nil-supply-types.json"),
     ),
     (
         "months.json",

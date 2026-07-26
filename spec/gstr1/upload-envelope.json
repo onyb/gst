@@ -15,7 +15,7 @@
     "EMPTY SECTIONS ARE OMITTED. The key list below is the working file's template, but the upload file passes through omit-empty, so a section with no records is absent entirely rather than present as []. An empty return therefore carries only gstin, fp, version and hash. Confirmed by diffing a file captured from the running tool.",
     "`hsnSac` is in the working-file template but, being always empty, never survives into the upload file.",
     "A numeric 0 survives omit-empty, so `csamt: 0` is emitted rather than dropped.",
-    "omit-empty is recursive, so an empty member of a nested object is dropped too \u2014 an HSN summary with only a B2B half emits `hsn: {hsn_b2b: [...]}` with no `hsn_b2c` key. INFERRED, not yet observed: the captured reference file had both halves populated."
+    "omit-empty is recursive, so an empty member of a nested object is dropped too \u2014 an HSN summary with only a B2B half emits `hsn: {hsn_b2b: [...]}` with no `hsn_b2c` key. Verified against a file captured from the tool for exactly that case: a workbook with the B2C half left blank produced a one-member `hsn` object, and this implementation reproduces it byte for byte."
   ],
   "hsn_bifurcation_start_period": "052025",
   "filename": {

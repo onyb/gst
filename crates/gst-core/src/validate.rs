@@ -419,6 +419,15 @@ fn to_cell(field: &Field, checked: &str, _ctx: &FilingContext) -> Result<Cell, S
                     )
                 })
         }
+        // The enum check above already confirmed the label; map it to its code.
+        Some("nil_supply_code") => masters::nil_supply_code(checked)
+            .map(|code| Cell::Text(code.to_owned()))
+            .ok_or_else(|| {
+                format!(
+                    "'{}' is not a known supply category: '{checked}'",
+                    field.column
+                )
+            }),
         Some("date_normalize") => Ok(Cell::Date(parse_date(checked)?)),
         // Already applied before validation, since later checks need the code.
         Some("state_code_prefix") => Ok(Cell::Text(checked.to_owned())),
