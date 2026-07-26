@@ -5,64 +5,181 @@
     "source": "The tool builds this wrapper by string concatenation in utility/common.js (formDataFormat), so the key order and the empty-value shapes below are literal.",
     "verified_on": "2026-07-26"
   },
-
   "version": "GST3.2.4",
   "hash": "hash",
-
   "notes": [
     "`version` is a literal tied to the tool release, not to the return.",
-    "`hash` is the literal four-character string 'hash' — a placeholder the tool never fills in.",
-    "`gt` and `cur_gt` (aggregate turnover) appear immediately after `fp` and only when a numeric turnover is supplied; the tool omits both when the value is not a number.",
-    "`hsn` changes shape with the return period: a single `data` array before 05-2025, and `hsn_b2b` / `hsn_b2c` arrays from 05-2025 onward (HSN_BIFURCATION_START_DATE).",
-    "`hsnSac` is emitted as an always-empty array alongside `hsn`; no template sheet feeds it.",
-    "Every section key is present even when empty, so an upload file always carries the full set."
+    "`hash` is the literal four-character string 'hash' \u2014 a placeholder the tool never fills in. Confirmed against a captured file.",
+    "`gt` and `cur_gt` (aggregate turnover) appear immediately after `fp` and only when a numeric turnover is supplied.",
+    "`hsn` changes shape with the return period: a single `data` array before 05-2025, and `hsn_b2b` / `hsn_b2c` arrays from 05-2025 onward.",
+    "EMPTY SECTIONS ARE OMITTED. The key list below is the working file's template, but the upload file passes through omit-empty, so a section with no records is absent entirely rather than present as []. An empty return therefore carries only gstin, fp, version and hash. Confirmed by diffing a file captured from the running tool.",
+    "`hsnSac` is in the working-file template but, being always empty, never survives into the upload file.",
+    "A numeric 0 survives omit-empty, so `csamt: 0` is emitted rather than dropped.",
+    "omit-empty is recursive, so an empty member of a nested object is dropped too \u2014 an HSN summary with only a B2B half emits `hsn: {hsn_b2b: [...]}` with no `hsn_b2c` key. INFERRED, not yet observed: the captured reference file had both halves populated."
   ],
-
   "hsn_bifurcation_start_period": "052025",
-
   "filename": {
-    "pattern": "returns_{fp}_R1_{gstin}_offline.json",
-    "description": "The tool writes returns_<MMYYYY>_<form minus its first three characters>_<GSTIN>_offline.json; for GSTR1 that middle segment is 'R1'."
+    "pattern": "returns_{generated_dmy}_R1_{gstin}_offline.json",
+    "description": "The tool names the file from the date it was GENERATED, not the return period: day, month and four-digit year concatenated with no zero padding (26 July 2026 gives '2672026'). Confirmed against a file captured from the running tool."
   },
-
   "chunking": {
     "max_bytes": 4928307,
     "description": "The tool splits an upload into chunks at 4.7 MiB (4.7 * 1024 * 1024), not the 5 MB the portal documentation mentions."
   },
-
   "keys": [
-    { "key": "gstin", "from": "context:gstin" },
-    { "key": "fp", "from": "context:period" },
-    { "key": "gt", "from": "context:gross_turnover", "omit_when_absent": true },
-    { "key": "cur_gt", "from": "context:current_gross_turnover", "omit_when_absent": true },
-    { "key": "version", "from": "literal:version" },
-    { "key": "hash", "from": "literal:hash" },
-    { "key": "b2b", "from": "section:b2b" },
-    { "key": "b2ba", "from": "section:b2ba" },
-    { "key": "b2cl", "from": "section:b2cl" },
-    { "key": "b2cla", "from": "section:b2cla" },
-    { "key": "b2cs", "from": "section:b2cs" },
-    { "key": "b2csa", "from": "section:b2csa" },
-    { "key": "nil", "from": "wrapped:nil", "wrapper": "inv" },
-    { "key": "exp", "from": "section:exp" },
-    { "key": "expa", "from": "section:expa" },
-    { "key": "hsnSac", "from": "empty:array" },
-    { "key": "cdnra", "from": "section:cdnra" },
-    { "key": "at", "from": "section:at" },
-    { "key": "ata", "from": "section:ata" },
-    { "key": "cdnr", "from": "section:cdnr" },
-    { "key": "cdnur", "from": "section:cdnur" },
-    { "key": "cdnura", "from": "section:cdnura" },
-    { "key": "atadj", "from": "section:atadj" },
-    { "key": "atadja", "from": "section:atadja" },
-    { "key": "doc_issue", "from": "wrapped:doc_issue", "wrapper": "doc_det" },
-    { "key": "hsn", "from": "hsn" },
-    { "key": "supeco", "from": "object", "members": ["clttx", "paytx"] },
-    { "key": "supecoa", "from": "object", "members": ["clttxa", "paytxa"] },
-    { "key": "ecom", "from": "object", "members": ["b2b", "b2c", "urp2b", "urp2c"] },
-    { "key": "ecoma", "from": "object", "members": ["b2ba", "b2ca", "urp2ba", "urp2ca"] }
+    {
+      "key": "gstin",
+      "from": "context:gstin"
+    },
+    {
+      "key": "fp",
+      "from": "context:period"
+    },
+    {
+      "key": "gt",
+      "from": "context:gross_turnover",
+      "omit_when_absent": true
+    },
+    {
+      "key": "cur_gt",
+      "from": "context:current_gross_turnover",
+      "omit_when_absent": true
+    },
+    {
+      "key": "version",
+      "from": "literal:version"
+    },
+    {
+      "key": "hash",
+      "from": "literal:hash"
+    },
+    {
+      "key": "b2b",
+      "from": "section:b2b"
+    },
+    {
+      "key": "b2ba",
+      "from": "section:b2ba"
+    },
+    {
+      "key": "b2cl",
+      "from": "section:b2cl"
+    },
+    {
+      "key": "b2cla",
+      "from": "section:b2cla"
+    },
+    {
+      "key": "b2cs",
+      "from": "section:b2cs"
+    },
+    {
+      "key": "b2csa",
+      "from": "section:b2csa"
+    },
+    {
+      "key": "nil",
+      "from": "wrapped:nil",
+      "wrapper": "inv"
+    },
+    {
+      "key": "exp",
+      "from": "section:exp"
+    },
+    {
+      "key": "expa",
+      "from": "section:expa"
+    },
+    {
+      "key": "hsnSac",
+      "from": "empty:array"
+    },
+    {
+      "key": "cdnra",
+      "from": "section:cdnra"
+    },
+    {
+      "key": "at",
+      "from": "section:at"
+    },
+    {
+      "key": "ata",
+      "from": "section:ata"
+    },
+    {
+      "key": "cdnr",
+      "from": "section:cdnr"
+    },
+    {
+      "key": "cdnur",
+      "from": "section:cdnur"
+    },
+    {
+      "key": "cdnura",
+      "from": "section:cdnura"
+    },
+    {
+      "key": "atadj",
+      "from": "section:atadj"
+    },
+    {
+      "key": "atadja",
+      "from": "section:atadja"
+    },
+    {
+      "key": "doc_issue",
+      "from": "wrapped:doc_issue",
+      "wrapper": "doc_det"
+    },
+    {
+      "key": "hsn",
+      "from": "hsn"
+    },
+    {
+      "key": "supeco",
+      "from": "object",
+      "members": [
+        "clttx",
+        "paytx"
+      ]
+    },
+    {
+      "key": "supecoa",
+      "from": "object",
+      "members": [
+        "clttxa",
+        "paytxa"
+      ]
+    },
+    {
+      "key": "ecom",
+      "from": "object",
+      "members": [
+        "b2b",
+        "b2c",
+        "urp2b",
+        "urp2c"
+      ]
+    },
+    {
+      "key": "ecoma",
+      "from": "object",
+      "members": [
+        "b2ba",
+        "b2ca",
+        "urp2ba",
+        "urp2ca"
+      ]
+    }
   ],
-
-  "hsn_before_bifurcation": { "wrapper": "data" },
-  "hsn_from_bifurcation": { "members": ["hsn_b2b", "hsn_b2c"] }
+  "hsn_before_bifurcation": {
+    "wrapper": "data"
+  },
+  "hsn_from_bifurcation": {
+    "members": [
+      "hsn_b2b",
+      "hsn_b2c"
+    ]
+  },
+  "omit_empty_sections": true
 }

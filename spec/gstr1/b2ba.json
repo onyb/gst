@@ -3,14 +3,12 @@
   "section": "b2ba",
   "return": "gstr1",
   "title": "Amended B2B Invoices - 9A",
-
   "provenance": {
     "offline_tool": "V3.2.4",
     "excel_template": "GSTR1_Excel_Workbook_Template_V2.2.xlsx",
     "csv_template": "Section_wise_CSV_files/GSTR1/b2ba.csv",
     "verified_on": "2026-07-26"
   },
-
   "source": {
     "excel": {
       "sheet": "b2ba",
@@ -23,7 +21,6 @@
       "header_row": 1
     }
   },
-
   "fields": [
     {
       "id": "ctin",
@@ -31,8 +28,15 @@
       "order": 0,
       "type": "gstin",
       "required": true,
-      "accepts": ["gstin", "uin", "tds", "nrtp"],
-      "constraints": ["gstin_checksum"],
+      "accepts": [
+        "gstin",
+        "uin",
+        "tds",
+        "nrtp"
+      ],
+      "constraints": [
+        "gstin_checksum"
+      ],
       "description": "Recipient's registration number, as amended. Same four accepted forms as the unamended section."
     },
     {
@@ -53,7 +57,9 @@
       "required": true,
       "pattern": "^[a-zA-Z0-9\\-/]{1,16}$",
       "max_length": 16,
-      "constraints": ["numeric_value_not_zero"],
+      "constraints": [
+        "numeric_value_not_zero"
+      ],
       "description": "Invoice number as originally reported. Identifies which already-filed invoice this row amends."
     },
     {
@@ -62,9 +68,11 @@
       "order": 3,
       "type": "date",
       "required": true,
-      "constraints": ["date_within_return_window"],
+      "constraints": [
+        "date_within_return_window"
+      ],
       "transform": "date_normalize",
-      "description": "Invoice date as originally reported. Usually falls in an earlier return period, which the window permits — it need only be on or after 1 July 2017."
+      "description": "Invoice date as originally reported. Usually falls in an earlier return period, which the window permits \u2014 it need only be on or after 1 July 2017."
     },
     {
       "id": "inum",
@@ -74,7 +82,9 @@
       "required": true,
       "pattern": "^[a-zA-Z0-9\\-/]{1,16}$",
       "max_length": 16,
-      "constraints": ["numeric_value_not_zero"],
+      "constraints": [
+        "numeric_value_not_zero"
+      ],
       "description": "Corrected invoice number. May be the same as the original when only other details changed."
     },
     {
@@ -83,7 +93,9 @@
       "order": 5,
       "type": "date",
       "required": true,
-      "constraints": ["date_within_return_window"],
+      "constraints": [
+        "date_within_return_window"
+      ],
       "transform": "date_normalize",
       "description": "Corrected invoice date."
     },
@@ -102,9 +114,11 @@
       "order": 7,
       "type": "state_code",
       "required": true,
-      "constraints": ["pos_code_range"],
+      "constraints": [
+        "pos_code_range"
+      ],
       "transform": "state_code_prefix",
-      "description": "Corrected place of supply as 'NN-Name'; only the numeric prefix is retained. Range-checked rather than matched against the state master — see the note on this in the unamended section."
+      "description": "Corrected place of supply as 'NN-Name'; only the numeric prefix is retained. Range-checked rather than matched against the state master \u2014 see the note on this in the unamended section."
     },
     {
       "id": "rchrg",
@@ -113,7 +127,10 @@
       "type": "text",
       "required": true,
       "default": "N",
-      "enum": ["Y", "N"],
+      "enum": [
+        "Y",
+        "N"
+      ],
       "description": "Whether tax is payable by the recipient under reverse charge. Blank is treated as 'N'."
     },
     {
@@ -123,7 +140,10 @@
       "type": "decimal",
       "required": true,
       "default": 100,
-      "enum": [100, 65],
+      "enum": [
+        100,
+        65
+      ],
       "transform": "percent_to_factor",
       "description": "Proportion of the tax rate that applies. Emitted as a factor (1.00 or 0.65) and applied to every computed tax amount."
     },
@@ -144,7 +164,9 @@
       "type": "gstin",
       "required": false,
       "must_be_empty": true,
-      "accepts": ["eco"],
+      "accepts": [
+        "eco"
+      ],
       "description": "Operator GSTIN. Present in the shared template but carries no value in this section; any value rejects the row."
     },
     {
@@ -176,111 +198,230 @@
       "description": "Corrected cess payable on this line. Blank is treated as 0."
     }
   ],
-
   "rules": [
     {
       "id": "b2ba.cbw_requires_rchrg",
       "description": "An intra-state supply that nonetheless attracts IGST is only valid as a reverse-charge supply.",
-      "when": { "field": "inv_typ", "eq": "CBW" },
-      "assert": { "field": "rchrg", "eq": "Y" },
+      "when": {
+        "field": "inv_typ",
+        "eq": "CBW"
+      },
+      "assert": {
+        "field": "rchrg",
+        "eq": "Y"
+      },
       "message": "Reverse Charge must be 'Y' when Invoice Type is 'Intra-State supplies attracting IGST'."
     },
     {
       "id": "b2ba.de_forbids_rchrg",
       "description": "Deemed exports are always forward-charge; tax is paid by the supplier.",
-      "when": { "field": "inv_typ", "eq": "DE" },
-      "assert": { "field": "rchrg", "ne": "Y" },
+      "when": {
+        "field": "inv_typ",
+        "eq": "DE"
+      },
+      "assert": {
+        "field": "rchrg",
+        "ne": "Y"
+      },
       "message": "Reverse Charge must not be 'Y' when Invoice Type is 'Deemed Exp'."
     },
     {
       "id": "b2ba.etin_not_allowed",
       "description": "Reproduces the reference behavior: this section carries no e-commerce operator GSTIN at all.",
-      "assert": { "field": "etin", "empty": true },
+      "assert": {
+        "field": "etin",
+        "empty": true
+      },
       "message": "E-Commerce GSTIN must be blank in the amended B2B section; report supplies through an operator in the ECO tables."
     }
   ],
-
   "grouping": {
-    "envelope_key": ["ctin"],
-    "invoice_key": ["inum"],
+    "envelope_key": [
+      "ctin"
+    ],
+    "invoice_key": [
+      "inum"
+    ],
     "invoice_key_case_insensitive": true,
-    "item_key": ["rt"],
+    "item_key": [
+      "rt"
+    ],
     "item_conflict": "last_wins",
     "invoice_field_conflict": "error"
   },
-
   "output": {
     "envelope": {
       "keys": [
-        { "key": "ctin", "from": "field:ctin", "description": "One envelope object per recipient." },
-        { "key": "cname", "from": "field:cname", "omit_when_empty": true },
-        { "key": "inv", "from": "nested:invoice" }
+        {
+          "key": "ctin",
+          "from": "field:ctin",
+          "description": "One envelope object per recipient."
+        },
+        {
+          "key": "inv",
+          "from": "nested:invoice"
+        }
       ]
     },
     "invoice": {
       "keys": [
-        { "key": "oinum", "from": "field:oinum" },
-        { "key": "oidt", "from": "field:oidt", "description": "Normalized to DD-MM-YYYY." },
-        { "key": "inum", "from": "field:inum" },
-        { "key": "idt", "from": "field:idt", "description": "Normalized to DD-MM-YYYY." },
-        { "key": "val", "from": "field:val" },
-        { "key": "pos", "from": "field:pos", "description": "Two-digit state code." },
-        { "key": "rchrg", "from": "field:rchrg" },
-        { "key": "diff_percent", "from": "field:diff_percent", "description": "Factor, not percent: 1.00 or 0.65." },
-        { "key": "etin", "from": "field:etin", "omit_when_empty": true, "verify": "oracle", "description": "Always empty in this section; whether the key is emitted at all is unconfirmed." },
-        { "key": "inv_typ", "from": "field:inv_typ", "description": "Code, not label: R, SEWP, SEWOP, DE, CBW." },
-        { "key": "itms", "from": "nested:item" }
+        {
+          "key": "oinum",
+          "from": "field:oinum"
+        },
+        {
+          "key": "oidt",
+          "from": "field:oidt",
+          "description": "Normalized to DD-MM-YYYY."
+        },
+        {
+          "key": "inum",
+          "from": "field:inum"
+        },
+        {
+          "key": "idt",
+          "from": "field:idt",
+          "description": "Normalized to DD-MM-YYYY."
+        },
+        {
+          "key": "val",
+          "from": "field:val"
+        },
+        {
+          "key": "pos",
+          "from": "field:pos",
+          "description": "Two-digit state code."
+        },
+        {
+          "key": "rchrg",
+          "from": "field:rchrg"
+        },
+        {
+          "key": "diff_percent",
+          "from": "field:diff_percent",
+          "description": "Proportion of the tax rate that applies, as a factor. The reference emits this key ONLY when it is 0.65 and discards every other value, so an unscaled row carries no such key at all. Verified against a file captured from the tool.",
+          "only_when_value": 0.65
+        },
+        {
+          "key": "etin",
+          "from": "field:etin",
+          "omit_when_empty": true,
+          "verify": "oracle",
+          "description": "Always empty in this section; whether the key is emitted at all is unconfirmed."
+        },
+        {
+          "key": "inv_typ",
+          "from": "field:inv_typ",
+          "description": "Code, not label: R, SEWP, SEWOP, DE, CBW."
+        },
+        {
+          "key": "itms",
+          "from": "nested:item"
+        }
       ]
     },
     "item": {
       "keys": [
-        { "key": "num", "from": "derive:gstr1.item_num" },
-        { "key": "itm_det.txval", "from": "field:txval" },
-        { "key": "itm_det.rt", "from": "field:rt" },
-        { "key": "itm_det.iamt", "from": "derive:gstr1.tax_split", "omit_when_empty": true, "description": "Integrated tax. Present on inter-state lines only." },
-        { "key": "itm_det.camt", "from": "derive:gstr1.tax_split", "omit_when_empty": true, "description": "Central tax. Present on intra-state lines only." },
-        { "key": "itm_det.samt", "from": "derive:gstr1.tax_split", "omit_when_empty": true, "description": "State/UT tax. Present on intra-state lines only, always equal to camt." },
-        { "key": "itm_det.csamt", "from": "derive:gstr1.cess" }
+        {
+          "key": "num",
+          "from": "derive:gstr1.item_num"
+        },
+        {
+          "key": "itm_det.txval",
+          "from": "field:txval"
+        },
+        {
+          "key": "itm_det.rt",
+          "from": "field:rt"
+        },
+        {
+          "key": "itm_det.iamt",
+          "from": "derive:gstr1.tax_split",
+          "omit_when_empty": true,
+          "description": "Integrated tax. Present on inter-state lines only."
+        },
+        {
+          "key": "itm_det.camt",
+          "from": "derive:gstr1.tax_split",
+          "omit_when_empty": true,
+          "description": "Central tax. Present on intra-state lines only."
+        },
+        {
+          "key": "itm_det.samt",
+          "from": "derive:gstr1.tax_split",
+          "omit_when_empty": true,
+          "description": "State/UT tax. Present on intra-state lines only, always equal to camt."
+        },
+        {
+          "key": "itm_det.csamt",
+          "from": "derive:gstr1.cess"
+        }
       ]
     },
-    "derivations": ["gstr1.item_num", "gstr1.tax_split", "gstr1.cess"],
+    "derivations": [
+      "gstr1.item_num",
+      "gstr1.tax_split",
+      "gstr1.cess"
+    ],
     "derivation_notes": {
       "gstr1.item_num": "Line item number is derived from the rate, not a sequence: num = rt * 100 + 1.",
       "gstr1.tax_split": "Identical to the unamended section, and computed from the corrected values: intra-state when the supplier's state equals pos AND inv_typ is R or DE AND the supplier is not an SEZ unit. Intra-state: camt = samt = round(txval * rt * 0.005 * diff_percent, 2). Inter-state: iamt = round(txval * rt * 0.01 * diff_percent, 2). SEWOP forces every tax amount to 0.",
       "gstr1.cess": "csamt = round(Cess Amount, 2), or 0 when blank. Forced to 0 for invoice type SEWOP."
     }
   },
-
   "notes": [
     {
       "kind": "quirk",
-      "text": "Nothing requires the original invoice to predate the revision, or the revised date to fall in the period being filed. The routine that looks like it should enforce date ordering is unreachable — it returns true before any check runs — so an amendment dated before its own original is accepted.",
-      "affects": ["oidt", "idt"]
+      "text": "Nothing requires the original invoice to predate the revision, or the revised date to fall in the period being filed. The routine that looks like it should enforce date ordering is unreachable \u2014 it returns true before any check runs \u2014 so an amendment dated before its own original is accepted.",
+      "affects": [
+        "oidt",
+        "idt"
+      ]
     },
     {
       "kind": "open_question",
       "text": "The reference groups rows into one amendment when EITHER the revised number OR the original number matches, then rejects the group if any other invoice-level field disagrees. Grouping here keys on the revised number alone, so rows sharing an original number but differing in revised number become separate records where the reference would reject them. Which the portal accepts is untested. Rows sharing a revised number but differing in original number are caught either way, by the field-agreement check.",
-      "affects": ["oinum", "inum"]
+      "affects": [
+        "oinum",
+        "inum"
+      ]
     },
     {
       "kind": "quirk",
-      "text": "Two rows sharing this amendment's key and the same rate do not sum — the later row silently replaces the earlier one, exactly as in the unamended section.",
-      "affects": ["rt", "txval"]
+      "text": "Two rows sharing this amendment's key and the same rate do not sum \u2014 the later row silently replaces the earlier one, exactly as in the unamended section.",
+      "affects": [
+        "rt",
+        "txval"
+      ]
     },
     {
       "kind": "quirk",
       "text": "Invoice numbers that are numerically zero ('0', '00') are rejected even though they satisfy the character pattern, for both the original and the revised number.",
-      "affects": ["oinum", "inum"]
+      "affects": [
+        "oinum",
+        "inum"
+      ]
     },
     {
       "kind": "quirk",
       "text": "Invoice type labels differ between the Excel/CSV import path and the tool's own UI dropdown. Import matches the labels in the masters file's import_label field.",
-      "affects": ["inv_typ"]
+      "affects": [
+        "inv_typ"
+      ]
     },
     {
-      "kind": "open_question",
-      "text": "The reference carries an internal 'diffval' field on the amendment object between import and generation; whether it reaches the upload JSON is unconfirmed. Unlike the unamended section, no 'status' (e-invoice status) field is carried here.",
-      "affects": ["output.invoice"]
+      "kind": "quirk",
+      "text": "The recipient's name is NOT sent to the portal. The reference strips cname from this section's envelope in removeCName() before writing the upload file, so the name is captured in the workbook for the filer's benefit only. Verified against a file captured from the tool.",
+      "affects": [
+        "cname"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "The internal 'diffval' flag never reaches the upload JSON \u2014 the reference deletes it alongside the tax-rate factor. This resolves what was previously an open question. Verified against a file captured from the tool.",
+      "affects": [
+        "output"
+      ]
     }
   ]
 }

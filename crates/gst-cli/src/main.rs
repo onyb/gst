@@ -482,7 +482,10 @@ fn run_upload(
         eprintln!("cannot create {}: {e}", output.display());
         return ExitCode::from(EXIT_UNUSABLE);
     }
-    let path = output.join(gst_core::upload::filename(&ctx));
+    let path = output.join(gst_core::upload::filename(
+        &ctx,
+        chrono::Local::now().date_naive(),
+    ));
     if let Err(e) = std::fs::write(&path, &body) {
         eprintln!("cannot write {}: {e}", path.display());
         return ExitCode::from(EXIT_UNUSABLE);

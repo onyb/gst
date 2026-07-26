@@ -50,6 +50,8 @@ struct EnvelopeSpec {
     hsn_bifurcation_start_period: String,
     filename: Filename,
     chunking: Chunking,
+    #[serde(default)]
+    omit_empty_sections: bool,
     keys: Vec<EnvelopeKey>,
     hsn_before_bifurcation: Wrapped,
     hsn_from_bifurcation: Wrapped,
@@ -72,12 +74,23 @@ pub fn max_chunk_bytes() -> usize {
     ENVELOPE.chunking.max_bytes
 }
 
-/// The filename the reference writes, e.g. `returns_072017_R1_27AAA…_offline.json`.
-pub fn filename(ctx: &FilingContext) -> String {
+/// The filename the reference writes, e.g. `returns_2672026_R1_27AAA…_offline.json`.
+///
+/// The date segment is the date the file was GENERATED — day, month and year
+/// concatenated with no zero padding — not the return period. The caller
+/// supplies it so the core stays free of a clock.
+pub fn filename(ctx: &FilingContext, generated_on: chrono::NaiveDate) -> String {
+    use chrono::Datelike;
+    let dmy = format!(
+        "{}{}{}",
+        generated_on.day(),
+        generated_on.month(),
+        generated_on.year()
+    );
     ENVELOPE
         .filename
         .pattern
-        .replace("{fp}", &period_string(ctx))
+        .replace("{generated_dmy}", &dmy)
         .replace("{gstin}", &ctx.supplier_gstin)
 }
 
@@ -153,9 +166,47 @@ pub fn build(
                 }
             }
         };
+        // The upload file passes through omit-empty, so a section with no
+        // records is absent entirely rather than present as an empty array.
+        // omit-empty is recursive, so empty members of a nested object (an
+        // unused half of the HSN summary, say) drop the same way.
+        let mut value = value;
+        if spec.omit_empty_sections {
+            prune_empty(&mut value);
+            if is_empty_section(&value) {
+                continue;
+            }
+        }
         out.insert_path(&entry.key, value);
     }
     out
+}
+
+/// Drop empty members from a nested object, recursively.
+///
+/// Inferred rather than observed: the captured reference file had both halves of
+/// the HSN summary populated, so it could not show whether a half-empty object
+/// keeps its empty member. omit-empty is recursive by construction and the
+/// top-level behaviour is confirmed, so the same rule is applied inside.
+fn prune_empty(value: &mut Json) {
+    if let Json::Obj(entries) = value {
+        for (_, v) in entries.iter_mut() {
+            prune_empty(v);
+        }
+        entries.retain(|(_, v)| !is_empty_section(v));
+    }
+}
+
+/// Whether a section's value would be dropped by omit-empty: an empty array, or
+/// an object whose every member is itself empty. A numeric 0 is NOT empty.
+fn is_empty_section(value: &Json) -> bool {
+    match value {
+        Json::Arr(items) => items.is_empty(),
+        Json::Obj(entries) => entries.iter().all(|(_, v)| is_empty_section(v)),
+        Json::Str(s) => s.is_empty(),
+        Json::Null => true,
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -173,6 +224,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "disproven by fixtures/golden: empty sections are omitted, not emitted as []"]
     fn an_empty_return_still_carries_every_section_key() {
         let json = build(&HashMap::new(), &ctx(7, 2017), Turnover::default()).to_json();
         for key in [
@@ -219,6 +271,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "superseded by the byte-for-byte golden test, which covers key order on real data"]
     fn the_key_order_matches_the_reference() {
         let json = build(&HashMap::new(), &ctx(7, 2017), Turnover::default()).to_json();
         let order = [
@@ -280,19 +333,38 @@ mod tests {
 
     #[test]
     fn hsn_changes_shape_at_the_bifurcation_period() {
-        // Before May 2025 a single data array.
-        let before = build(&HashMap::new(), &ctx(4, 2025), Turnover::default()).to_json();
-        assert!(before.contains(r#""hsn":{"data":[]}"#), "{before}");
+        // The wrapper is only observable once the section has records, since an
+        // empty hsn is dropped like any other empty section.
+        let row = || {
+            vec![Json::Obj(vec![(
+                "hsn_sc".to_string(),
+                Json::Str("0101".into()),
+            )])]
+        };
 
-        // From May 2025 onward, split by B2B and B2C.
-        let after = build(&HashMap::new(), &ctx(5, 2025), Turnover::default()).to_json();
+        // Before May 2025 a single `data` array, fed by the combined section.
+        let mut before_sections = HashMap::new();
+        before_sections.insert("hsn".to_string(), row());
+        let before = build(&before_sections, &ctx(4, 2025), Turnover::default()).to_json();
         assert!(
-            after.contains(r#""hsn":{"hsn_b2b":[],"hsn_b2c":[]}"#),
+            before.contains(r#""hsn":{"data":[{"hsn_sc":"0101"}]}"#),
+            "{before}"
+        );
+
+        // From May 2025, split by B2B and B2C.
+        let mut after_sections = HashMap::new();
+        after_sections.insert("hsn(b2b)".to_string(), row());
+        let after = build(&after_sections, &ctx(5, 2025), Turnover::default()).to_json();
+        assert!(
+            after.contains(r#""hsn":{"hsn_b2b":[{"hsn_sc":"0101"}]}"#),
             "{after}"
         );
+        // The empty half is dropped rather than emitted.
+        assert!(!after.contains("hsn_b2c"), "{after}");
     }
 
     #[test]
+    #[ignore = "wrappers only appear once those sections have records; covered by the golden test"]
     fn nil_and_doc_issue_are_wrapped_not_bare_arrays() {
         let json = build(&HashMap::new(), &ctx(7, 2017), Turnover::default()).to_json();
         assert!(json.contains(r#""nil":{"inv":[]}"#), "{json}");
@@ -314,15 +386,35 @@ mod tests {
             json.contains(r#""b2b":[{"ctin":"12GEOPS0823BBZH"}]"#),
             "{json}"
         );
-        // Untouched sections stay empty.
-        assert!(json.contains(r#""b2ba":[]"#), "{json}");
+        // Untouched sections are absent entirely, not emitted as [].
+        assert!(!json.contains("b2ba"), "{json}");
     }
 
     #[test]
-    fn the_filename_follows_the_reference_pattern() {
+    fn the_filename_carries_the_generation_date_not_the_period() {
+        // Day and month are unpadded, and the period plays no part: a return for
+        // July 2017 generated on 26 July 2026 is named for the latter.
+        let generated = chrono::NaiveDate::from_ymd_opt(2026, 7, 26).unwrap();
         assert_eq!(
-            filename(&ctx(7, 2017)),
-            "returns_072017_R1_27AAPFU0939F1ZV_offline.json"
+            filename(&ctx(7, 2017), generated),
+            "returns_2672026_R1_27AAPFU0939F1ZV_offline.json"
+        );
+        // Single-digit day and month stay single-digit.
+        let early = chrono::NaiveDate::from_ymd_opt(2026, 2, 5).unwrap();
+        assert_eq!(
+            filename(&ctx(7, 2017), early),
+            "returns_522026_R1_27AAPFU0939F1ZV_offline.json"
+        );
+    }
+
+    #[test]
+    fn empty_sections_are_omitted_entirely() {
+        // An empty return carries only the four header keys — every section is
+        // dropped by omit-empty rather than emitted as [].
+        let json = build(&HashMap::new(), &ctx(7, 2017), Turnover::default()).to_json();
+        assert_eq!(
+            json,
+            r#"{"gstin":"27AAPFU0939F1ZV","fp":"072017","version":"GST3.2.4","hash":"hash"}"#
         );
     }
 

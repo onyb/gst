@@ -89,7 +89,7 @@ fn every_derivation_the_spec_names_is_implemented() {
 fn a_record_sits_at_the_top_level_with_no_counterparty() {
     assert_eq!(
         payload(&[base(5)], &ctx()),
-        r#"[{"nt_num":"UN-001","nt_dt":"14-07-2017","ntty":"C","val":295000,"typ":"B2CL","pos":"37","diff_percent":1,"itms":[{"num":1801,"itm_det":{"txval":250000,"rt":18,"iamt":45000,"csamt":0}}]}]"#
+        r#"[{"nt_num":"UN-001","nt_dt":"14-07-2017","ntty":"C","val":295000,"typ":"B2CL","pos":"37","itms":[{"num":1801,"itm_det":{"txval":250000,"rt":18,"iamt":45000,"csamt":0}}]}]"#
     );
 }
 

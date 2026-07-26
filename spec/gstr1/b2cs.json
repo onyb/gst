@@ -3,14 +3,12 @@
   "section": "b2cs",
   "return": "gstr1",
   "title": "B2C(Small) Details - 7",
-
   "provenance": {
     "offline_tool": "V3.2.4",
     "excel_template": "GSTR1_Excel_Workbook_Template_V2.2.xlsx",
     "csv_template": "Section_wise_CSV_files/GSTR1/b2cs.csv",
     "verified_on": "2026-07-26"
   },
-
   "source": {
     "excel": {
       "sheet": "b2cs",
@@ -23,7 +21,6 @@
       "header_row": 1
     }
   },
-
   "fields": [
     {
       "id": "typ",
@@ -31,8 +28,10 @@
       "order": 0,
       "type": "text",
       "required": true,
-      "enum": ["OE"],
-      "description": "Supply channel. Only 'OE' (other than e-commerce) is accepted on import, even though the template's dropdown also offers 'E' — see the note on the unreachable e-commerce branch."
+      "enum": [
+        "OE"
+      ],
+      "description": "Supply channel. Only 'OE' (other than e-commerce) is accepted on import, even though the template's dropdown also offers 'E' \u2014 see the note on the unreachable e-commerce branch."
     },
     {
       "id": "pos",
@@ -40,9 +39,11 @@
       "order": 1,
       "type": "state_code",
       "required": true,
-      "constraints": ["pos_code_range"],
+      "constraints": [
+        "pos_code_range"
+      ],
       "transform": "state_code_prefix",
-      "description": "Place of supply as 'NN-Name'; only the numeric prefix is retained. Unlike B2C(Large), the supplier's own state IS allowed here — that is what makes a row intra-state."
+      "description": "Place of supply as 'NN-Name'; only the numeric prefix is retained. Unlike B2C(Large), the supplier's own state IS allowed here \u2014 that is what makes a row intra-state."
     },
     {
       "id": "diff_percent",
@@ -51,9 +52,12 @@
       "type": "decimal",
       "required": true,
       "default": 100,
-      "enum": [100, 65],
+      "enum": [
+        100,
+        65
+      ],
       "transform": "percent_to_factor",
-      "description": "Proportion of the tax rate that applies. Emitted as a factor, and dropped entirely when it is 1 — only a 65% row carries the key."
+      "description": "Proportion of the tax rate that applies. Emitted as a factor, and dropped entirely when it is 1 \u2014 only a 65% row carries the key."
     },
     {
       "id": "rt",
@@ -71,7 +75,7 @@
       "type": "decimal",
       "required": true,
       "pattern": "^(-?(\\d{0,11})(\\.\\d{0,2})?)$",
-      "description": "Total taxable value of small supplies at this rate, excluding tax. MAY BE NEGATIVE — this is the only section so far that permits it, so a net downward adjustment can be reported without a credit note."
+      "description": "Total taxable value of small supplies at this rate, excluding tax. MAY BE NEGATIVE \u2014 this is the only section so far that permits it, so a net downward adjustment can be reported without a credit note."
     },
     {
       "id": "csamt",
@@ -90,80 +94,148 @@
       "type": "gstin",
       "required": false,
       "must_be_empty": true,
-      "accepts": ["eco"],
+      "accepts": [
+        "eco"
+      ],
       "description": "Operator GSTIN. Reachable only for a Type of 'E', which import rejects outright, so in practice this must always be blank."
     }
   ],
-
   "rules": [
     {
       "id": "b2cs.etin_not_allowed",
       "description": "The e-commerce branch is unreachable, so no operator GSTIN can ever be accepted here.",
-      "assert": { "field": "etin", "empty": true },
+      "assert": {
+        "field": "etin",
+        "empty": true
+      },
       "message": "E-Commerce GSTIN must be blank: import accepts only Type 'OE', and an 'OE' row carries no operator GSTIN."
     }
   ],
-
   "grouping": {},
-
   "output": {
     "record": {
       "keys": [
-        { "key": "sply_ty", "from": "derive:gstr1.supply_type", "description": "'INTRA' or 'INTER', derived from the place of supply against the filer's own state." },
-        { "key": "rt", "from": "field:rt" },
-        { "key": "typ", "from": "field:typ" },
-        { "key": "etin", "from": "field:etin", "omit_when_empty": true, "verify": "oracle", "description": "Always empty in practice; whether the key is emitted at all is unconfirmed." },
-        { "key": "pos", "from": "field:pos", "description": "Two-digit state code." },
-        { "key": "diff_percent", "from": "field:diff_percent", "omit_when_value": 1, "description": "Dropped when the factor is 1, so only a 65% row carries it." },
-        { "key": "txval", "from": "field:txval" },
-        { "key": "camt", "from": "derive:gstr1.tax_split_by_pos", "omit_when_empty": true, "description": "Central tax. Present on intra-state rows only." },
-        { "key": "samt", "from": "derive:gstr1.tax_split_by_pos", "omit_when_empty": true, "description": "State/UT tax. Present on intra-state rows only, always equal to camt." },
-        { "key": "iamt", "from": "derive:gstr1.tax_split_by_pos", "omit_when_empty": true, "description": "Integrated tax. Present on inter-state rows only." },
-        { "key": "csamt", "from": "derive:gstr1.tax_split_by_pos" }
+        {
+          "key": "sply_ty",
+          "from": "derive:gstr1.supply_type",
+          "description": "'INTRA' or 'INTER', derived from the place of supply against the filer's own state."
+        },
+        {
+          "key": "rt",
+          "from": "field:rt"
+        },
+        {
+          "key": "typ",
+          "from": "field:typ"
+        },
+        {
+          "key": "etin",
+          "from": "field:etin",
+          "omit_when_empty": true,
+          "verify": "oracle",
+          "description": "Always empty in practice; whether the key is emitted at all is unconfirmed."
+        },
+        {
+          "key": "pos",
+          "from": "field:pos",
+          "description": "Two-digit state code."
+        },
+        {
+          "key": "diff_percent",
+          "from": "field:diff_percent",
+          "description": "Proportion of the tax rate that applies, as a factor. The reference emits this key ONLY when it is 0.65 and discards every other value, so an unscaled row carries no such key at all. Verified against a file captured from the tool.",
+          "only_when_value": 0.65
+        },
+        {
+          "key": "txval",
+          "from": "field:txval"
+        },
+        {
+          "key": "camt",
+          "from": "derive:gstr1.tax_split_by_pos",
+          "omit_when_empty": true,
+          "description": "Central tax. Present on intra-state rows only."
+        },
+        {
+          "key": "samt",
+          "from": "derive:gstr1.tax_split_by_pos",
+          "omit_when_empty": true,
+          "description": "State/UT tax. Present on intra-state rows only, always equal to camt."
+        },
+        {
+          "key": "iamt",
+          "from": "derive:gstr1.tax_split_by_pos",
+          "omit_when_empty": true,
+          "description": "Integrated tax. Present on inter-state rows only."
+        },
+        {
+          "key": "csamt",
+          "from": "derive:gstr1.tax_split_by_pos"
+        }
       ]
     },
-    "derivations": ["gstr1.supply_type", "gstr1.tax_split_by_pos"],
+    "derivations": [
+      "gstr1.supply_type",
+      "gstr1.tax_split_by_pos"
+    ],
     "derivation_notes": {
       "gstr1.supply_type": "'INTRA' when the place of supply equals the filer's own state and the filer is not an SEZ unit; 'INTER' otherwise. Emitted as a field of the record, which no nested section does.",
       "gstr1.tax_split_by_pos": "Same arithmetic as the nested sections but with NO invoice-type gate, because this section has no invoice type. Intra-state: camt = samt = round(txval * rt * 0.005 * diff_percent, 2). Inter-state: iamt = round(txval * rt * 0.01 * diff_percent, 2). Both branches are genuinely reachable here, unlike in B2C(Large). csamt = round(Cess Amount, 2), or 0 when blank."
     }
   },
-
   "notes": [
     {
       "kind": "quirk",
-      "text": "The e-commerce branch of this section is unreachable. Import requires Type to match exactly 'OE', yet the operator-GSTIN requirement is guarded by Type being 'E' — both conditions are combined with AND, so an 'E' row always fails the Type check before its operator GSTIN is ever considered. The template's dropdown offers both values and GSTN's own sample CSV uses 'E' on two of three rows, all of which import rejects. Consequence: Type is always 'OE' and the operator GSTIN is always blank.",
-      "affects": ["typ", "etin"]
+      "text": "The e-commerce branch of this section is unreachable. Import requires Type to match exactly 'OE', yet the operator-GSTIN requirement is guarded by Type being 'E' \u2014 both conditions are combined with AND, so an 'E' row always fails the Type check before its operator GSTIN is ever considered. The template's dropdown offers both values and GSTN's own sample CSV uses 'E' on two of three rows, all of which import rejects. Consequence: Type is always 'OE' and the operator GSTIN is always blank.",
+      "affects": [
+        "typ",
+        "etin"
+      ]
     },
     {
       "kind": "quirk",
-      "text": "The Excel template and the section CSV disagree on column order: the sheet is Type, Place Of Supply, Applicable % of Tax Rate, Rate, ... while the CSV is Type, Place Of Supply, Rate, Applicable % of Tax Rate, ... — columns three and four are swapped. The `order` recorded here follows the Excel template. Import matches on header text rather than position, so both files read correctly regardless.",
-      "affects": ["diff_percent", "rt"]
+      "text": "The Excel template and the section CSV disagree on column order: the sheet is Type, Place Of Supply, Applicable % of Tax Rate, Rate, ... while the CSV is Type, Place Of Supply, Rate, Applicable % of Tax Rate, ... \u2014 columns three and four are swapped. The `order` recorded here follows the Excel template. Import matches on header text rather than position, so both files read correctly regardless.",
+      "affects": [
+        "diff_percent",
+        "rt"
+      ]
     },
     {
       "kind": "quirk",
       "text": "This section is flat: one payload object per row, with the tax split carried as fields of the record and a 'sply_ty' discriminator, rather than an envelope containing invoices containing line items. There is no document number and no date anywhere in the table.",
-      "affects": ["output.record"]
+      "affects": [
+        "output.record"
+      ]
     },
     {
       "kind": "quirk",
       "text": "Taxable value and cess may be negative, which no earlier section permits. A net reduction in small-value B2C supplies is reported by putting a negative figure here rather than by raising a credit note.",
-      "affects": ["txval", "csamt"]
+      "affects": [
+        "txval",
+        "csamt"
+      ]
     },
     {
       "kind": "quirk",
-      "text": "The reference drops diff_percent from the payload whenever it equals 1, so an unscaled row simply has no such key. It also drops the operator GSTIN when empty, which — given the unreachable e-commerce branch — means always.",
-      "affects": ["diff_percent", "etin"]
+      "text": "The reference drops diff_percent from the payload whenever it equals 1, so an unscaled row simply has no such key. It also drops the operator GSTIN when empty, which \u2014 given the unreachable e-commerce branch \u2014 means always.",
+      "affects": [
+        "diff_percent",
+        "etin"
+      ]
     },
     {
       "kind": "quirk",
-      "text": "Rows are never merged. The reference looks for an existing record with the same place of supply and tax-rate factor and, on finding one, requires the Type to agree — but since Type can only ever be 'OE', that check cannot fail for any row that passed field validation. Two identical rows therefore both reach the payload as separate objects.",
-      "affects": ["output.record"]
+      "text": "Rows are never merged. The reference looks for an existing record with the same place of supply and tax-rate factor and, on finding one, requires the Type to agree \u2014 but since Type can only ever be 'OE', that check cannot fail for any row that passed field validation. Two identical rows therefore both reach the payload as separate objects.",
+      "affects": [
+        "output.record"
+      ]
     },
     {
-      "kind": "open_question",
-      "text": "The reference carries an internal 'diffval' field on the record between import and generation; whether it reaches the upload JSON is unconfirmed.",
-      "affects": ["output.record"]
+      "kind": "quirk",
+      "text": "The internal 'diffval' flag never reaches the upload JSON \u2014 the reference deletes it alongside the tax-rate factor. This resolves what was previously an open question. Verified against a file captured from the tool.",
+      "affects": [
+        "output"
+      ]
     }
   ]
 }

@@ -11,7 +11,7 @@ repository = "https://github.com/onyb/gst"
 [workspace.dependencies]
 anyhow = "1"
 calamine = "0.36"
-chrono = { version = "0.4", default-features = false, features = ["std"] }
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
 clap = { version = "4", features = ["derive"] }
 csv = "1"
 regex = "1"

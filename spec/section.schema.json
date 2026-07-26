@@ -131,6 +131,11 @@
           "description": "What happens when two rows share both an invoice key and an item key. `last_wins`: the later row silently replaces the earlier one (no summing, no error).",
           "enum": ["last_wins", "sum", "error"]
         },
+        "agree_fields": {
+          "description": "Extra field ids that rows grouped together must agree on, beyond those the payload carries. Agreement and emission are separate concerns: the reference compares the recipient's name when matching rows to a note, yet strips that name before writing the upload file.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
         "invoice_field_conflict": {
           "description": "What happens when rows sharing an invoice key disagree on an invoice-level field. `error`: the whole invoice is rejected.",
           "enum": ["error", "first_wins"]
@@ -379,7 +384,10 @@
                 "default": false
               },
               "omit_when_value": {
-                "description": "Key is left out when it would carry exactly this value. Covers keys the reference drops at a default rather than at empty, e.g. an unscaled tax-rate factor of 1."
+                "description": "Key is left out when it would carry exactly this value. Covers keys the reference drops at a default rather than at empty."
+              },
+              "only_when_value": {
+                "description": "Key is emitted ONLY when it carries exactly this value, and dropped for anything else. The reference keeps the tax-rate factor solely when it is 0.65, discarding every other value rather than just the default."
               },
               "verify": {
                 "description": "Marks a key whose presence or exact form is not yet confirmed. `oracle`: must be settled by differential capture against the official tool before this section is trusted.",

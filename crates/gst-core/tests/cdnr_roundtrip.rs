@@ -88,7 +88,7 @@ fn every_derivation_the_spec_names_is_implemented() {
 fn a_note_nests_under_an_nt_array_not_an_inv_array() {
     assert_eq!(
         payload(&[base(5)], &ctx()),
-        r#"[{"ctin":"12GEOPS0823BBZH","cname":"Acme Traders","nt":[{"nt_num":"CN-001","nt_dt":"14-07-2017","ntty":"C","val":59000,"pos":"37","diff_percent":1,"rchrg":"N","inv_typ":"R","itms":[{"num":1801,"itm_det":{"txval":50000,"rt":18,"iamt":9000,"csamt":0}}]}]}]"#
+        r#"[{"ctin":"12GEOPS0823BBZH","nt":[{"nt_num":"CN-001","nt_dt":"14-07-2017","ntty":"C","val":59000,"pos":"37","rchrg":"N","inv_typ":"R","itms":[{"num":1801,"itm_det":{"txval":50000,"rt":18,"iamt":9000,"csamt":0}}]}]}]"#
     );
 }
 

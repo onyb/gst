@@ -321,6 +321,10 @@ pub struct Grouping {
     pub invoice_key_case_insensitive: bool,
     #[serde(default)]
     pub item_key: Vec<String>,
+    /// Fields that must agree across grouped rows even though the payload does
+    /// not carry them.
+    #[serde(default)]
+    pub agree_fields: Vec<String>,
     pub item_conflict: Option<ItemConflict>,
     pub invoice_field_conflict: Option<InvoiceFieldConflict>,
 }
@@ -372,6 +376,8 @@ pub struct PayloadKey {
     /// Dropped when the value would be exactly this — for keys the reference
     /// omits at a default rather than at empty.
     pub omit_when_value: Option<SpecValue>,
+    /// Emitted ONLY when the value is exactly this, and dropped otherwise.
+    pub only_when_value: Option<SpecValue>,
     pub verify: Option<Verify>,
     pub description: Option<String>,
 }

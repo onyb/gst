@@ -66,18 +66,21 @@ pub fn generate(spec: &SectionSpec, records: &[Record], ctx: &FilingContext) -> 
 
     // Invoice-level fields are those the payload reads at the invoice or
     // envelope level. Rows sharing an invoice key must agree on all of them.
-    let invoice_fields = spec
+    let mut invoice_fields = spec
         .output
         .invoice
         .as_ref()
         .map(mapped_fields)
         .unwrap_or_default();
-    let envelope_fields = spec
+    // Some fields must agree without ever being emitted.
+    invoice_fields.extend(spec.grouping.agree_fields.iter().cloned());
+    let mut envelope_fields = spec
         .output
         .envelope
         .as_ref()
         .map(mapped_fields)
         .unwrap_or_default();
+    envelope_fields.extend(spec.grouping.agree_fields.iter().cloned());
 
     for record in records {
         let env_key = group_key(spec, record, &spec.grouping.envelope_key);
@@ -383,9 +386,18 @@ fn omitted(key: &crate::spec::PayloadKey, value: &Json) -> bool {
     if key.omit_when_empty && value.is_empty() {
         return true;
     }
-    match (&key.omit_when_value, value) {
-        (Some(spec_value), Json::Num(n)) => spec_value.matches_text(&n.normalize().to_string()),
-        (Some(spec_value), Json::Str(s)) => spec_value.matches_text(s),
+    let as_text = match value {
+        Json::Num(n) => Some(n.normalize().to_string()),
+        Json::Str(s) => Some(s.clone()),
+        _ => None,
+    };
+    if let (Some(only), Some(text)) = (&key.only_when_value, as_text.as_deref())
+        && !only.matches_text(text)
+    {
+        return true;
+    }
+    match (&key.omit_when_value, as_text.as_deref()) {
+        (Some(spec_value), Some(text)) => spec_value.matches_text(text),
         _ => false,
     }
 }

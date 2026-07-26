@@ -85,7 +85,7 @@ fn every_derivation_the_spec_names_is_implemented() {
 fn the_payload_groups_by_place_of_supply_not_recipient() {
     assert_eq!(
         payload(&[base(5)], &ctx(7, 2017)),
-        r#"[{"pos":"37","inv":[{"inum":"INV-L001","idt":"14-07-2017","val":295000,"diff_percent":1,"itms":[{"num":1801,"itm_det":{"txval":250000,"rt":18,"iamt":45000,"csamt":0}}]}]}]"#
+        r#"[{"pos":"37","inv":[{"inum":"INV-L001","idt":"14-07-2017","val":295000,"itms":[{"num":1801,"itm_det":{"txval":250000,"rt":18,"iamt":45000,"csamt":0}}]}]}]"#
     );
 }
 

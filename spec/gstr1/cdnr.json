@@ -3,14 +3,12 @@
   "section": "cdnr",
   "return": "gstr1",
   "title": "Credit/Debit Notes (Registered) - 9B",
-
   "provenance": {
     "offline_tool": "V3.2.4",
     "excel_template": "GSTR1_Excel_Workbook_Template_V2.2.xlsx",
     "csv_template": "Section_wise_CSV_files/GSTR1/cdnr.csv",
     "verified_on": "2026-07-26"
   },
-
   "source": {
     "excel": {
       "sheet": "cdnr",
@@ -23,7 +21,6 @@
       "header_row": 1
     }
   },
-
   "fields": [
     {
       "id": "ctin",
@@ -31,8 +28,15 @@
       "order": 0,
       "type": "gstin",
       "required": true,
-      "accepts": ["gstin", "uin", "tds", "nrtp"],
-      "constraints": ["gstin_checksum"],
+      "accepts": [
+        "gstin",
+        "uin",
+        "tds",
+        "nrtp"
+      ],
+      "constraints": [
+        "gstin_checksum"
+      ],
       "description": "Recipient's registration number. This table covers notes issued to registered persons only."
     },
     {
@@ -43,7 +47,7 @@
       "required": false,
       "pattern": "^[a-zA-Z0-9_&'\\-./,()?@!#%$~*;+= ]{1,99}$",
       "max_length": 99,
-      "description": "Trade name of the recipient. Unlike the B2B section, rows sharing a note must agree on this — the reference compares it when matching."
+      "description": "Trade name of the recipient. Unlike the B2B section, rows sharing a note must agree on this \u2014 the reference compares it when matching."
     },
     {
       "id": "nt_num",
@@ -53,7 +57,9 @@
       "required": true,
       "pattern": "^[a-zA-Z0-9\\-/]{1,16}$",
       "max_length": 16,
-      "constraints": ["numeric_value_not_zero"],
+      "constraints": [
+        "numeric_value_not_zero"
+      ],
       "description": "Credit or debit note number."
     },
     {
@@ -62,7 +68,9 @@
       "order": 3,
       "type": "date",
       "required": true,
-      "constraints": ["date_within_return_window"],
+      "constraints": [
+        "date_within_return_window"
+      ],
       "transform": "date_normalize",
       "description": "Date the note was issued."
     },
@@ -72,7 +80,10 @@
       "order": 4,
       "type": "text",
       "required": true,
-      "enum": ["C", "D"],
+      "enum": [
+        "C",
+        "D"
+      ],
       "description": "'C' for a credit note, 'D' for a debit note. A single letter, not a word."
     },
     {
@@ -81,7 +92,9 @@
       "order": 5,
       "type": "state_code",
       "required": true,
-      "constraints": ["pos_code_range"],
+      "constraints": [
+        "pos_code_range"
+      ],
       "transform": "state_code_prefix",
       "description": "Place of supply of the underlying supply, as 'NN-Name'; only the numeric prefix is retained."
     },
@@ -91,8 +104,11 @@
       "order": 6,
       "type": "text",
       "required": true,
-      "enum": ["Y", "N"],
-      "description": "Whether tax is payable by the recipient under reverse charge. Unlike the B2B section, a blank is NOT defaulted to 'N' here — it is rejected."
+      "enum": [
+        "Y",
+        "N"
+      ],
+      "description": "Whether tax is payable by the recipient under reverse charge. Unlike the B2B section, a blank is NOT defaulted to 'N' here \u2014 it is rejected."
     },
     {
       "id": "inv_typ",
@@ -120,7 +136,10 @@
       "type": "decimal",
       "required": true,
       "default": 100,
-      "enum": [100, 65],
+      "enum": [
+        100,
+        65
+      ],
       "transform": "percent_to_factor",
       "description": "Proportion of the tax rate that applies. Emitted as a factor (1.00 or 0.65)."
     },
@@ -144,7 +163,7 @@
         {
           "name": "min_exclusive",
           "value": 0,
-          "description": "Must be strictly positive — a zero taxable value is rejected outright, unlike every earlier section."
+          "description": "Must be strictly positive \u2014 a zero taxable value is rejected outright, unlike every earlier section."
         }
       ],
       "description": "Taxable value at this rate, excluding tax. Strictly greater than zero."
@@ -160,113 +179,231 @@
       "description": "Cess on this line. Blank is treated as 0; negatives are rejected by the pattern."
     }
   ],
-
   "rules": [
     {
       "id": "cdnr.cbw_requires_rchrg",
       "description": "An intra-state supply that nonetheless attracts IGST is only valid as a reverse-charge supply.",
-      "when": { "field": "inv_typ", "eq": "CBW" },
-      "assert": { "field": "rchrg", "eq": "Y" },
+      "when": {
+        "field": "inv_typ",
+        "eq": "CBW"
+      },
+      "assert": {
+        "field": "rchrg",
+        "eq": "Y"
+      },
       "message": "Reverse Charge must be 'Y' when Note Supply Type is 'Intra-State supplies attracting IGST'."
     },
     {
       "id": "cdnr.de_forbids_rchrg",
       "description": "Deemed exports are always forward-charge; tax is paid by the supplier.",
-      "when": { "field": "inv_typ", "eq": "DE" },
-      "assert": { "field": "rchrg", "ne": "Y" },
+      "when": {
+        "field": "inv_typ",
+        "eq": "DE"
+      },
+      "assert": {
+        "field": "rchrg",
+        "ne": "Y"
+      },
       "message": "Reverse Charge must not be 'Y' when Note Supply Type is 'Deemed Exp'."
     }
   ],
-
   "grouping": {
-    "envelope_key": ["ctin"],
-    "invoice_key": ["nt_num"],
+    "envelope_key": [
+      "ctin"
+    ],
+    "invoice_key": [
+      "nt_num"
+    ],
     "invoice_key_case_insensitive": true,
-    "item_key": ["rt"],
+    "item_key": [
+      "rt"
+    ],
     "item_conflict": "last_wins",
-    "invoice_field_conflict": "error"
+    "invoice_field_conflict": "error",
+    "agree_fields": [
+      "cname"
+    ]
   },
-
   "output": {
     "envelope": {
       "keys": [
-        { "key": "ctin", "from": "field:ctin", "description": "One envelope object per recipient." },
-        { "key": "cname", "from": "field:cname", "omit_when_empty": true },
-        { "key": "nt", "from": "nested:invoice", "description": "Notes, not invoices — this section's array key is 'nt', not 'inv'." }
+        {
+          "key": "ctin",
+          "from": "field:ctin",
+          "description": "One envelope object per recipient."
+        },
+        {
+          "key": "nt",
+          "from": "nested:invoice",
+          "description": "Notes, not invoices \u2014 this section's array key is 'nt', not 'inv'."
+        }
       ]
     },
     "invoice": {
       "keys": [
-        { "key": "nt_num", "from": "field:nt_num" },
-        { "key": "nt_dt", "from": "field:nt_dt", "description": "Normalized to DD-MM-YYYY." },
-        { "key": "ntty", "from": "field:ntty", "description": "'C' or 'D'." },
-        { "key": "val", "from": "field:val" },
-        { "key": "pos", "from": "field:pos", "description": "Two-digit state code." },
-        { "key": "diff_percent", "from": "field:diff_percent", "description": "Factor, not percent: 1.00 or 0.65." },
-        { "key": "rchrg", "from": "field:rchrg" },
-        { "key": "inv_typ", "from": "field:inv_typ", "description": "Code, not label: R, SEWP, SEWOP, DE, CBW." },
-        { "key": "itms", "from": "nested:item" }
+        {
+          "key": "nt_num",
+          "from": "field:nt_num"
+        },
+        {
+          "key": "nt_dt",
+          "from": "field:nt_dt",
+          "description": "Normalized to DD-MM-YYYY."
+        },
+        {
+          "key": "ntty",
+          "from": "field:ntty",
+          "description": "'C' or 'D'."
+        },
+        {
+          "key": "val",
+          "from": "field:val"
+        },
+        {
+          "key": "pos",
+          "from": "field:pos",
+          "description": "Two-digit state code."
+        },
+        {
+          "key": "diff_percent",
+          "from": "field:diff_percent",
+          "description": "Proportion of the tax rate that applies, as a factor. The reference emits this key ONLY when it is 0.65 and discards every other value, so an unscaled row carries no such key at all. Verified against a file captured from the tool.",
+          "only_when_value": 0.65
+        },
+        {
+          "key": "rchrg",
+          "from": "field:rchrg"
+        },
+        {
+          "key": "inv_typ",
+          "from": "field:inv_typ",
+          "description": "Code, not label: R, SEWP, SEWOP, DE, CBW."
+        },
+        {
+          "key": "itms",
+          "from": "nested:item"
+        }
       ]
     },
     "item": {
       "keys": [
-        { "key": "num", "from": "derive:gstr1.item_num" },
-        { "key": "itm_det.txval", "from": "field:txval" },
-        { "key": "itm_det.rt", "from": "field:rt" },
-        { "key": "itm_det.iamt", "from": "derive:gstr1.tax_split", "omit_when_empty": true, "description": "Integrated tax. Present on inter-state lines only." },
-        { "key": "itm_det.camt", "from": "derive:gstr1.tax_split", "omit_when_empty": true, "description": "Central tax. Present on intra-state lines only." },
-        { "key": "itm_det.samt", "from": "derive:gstr1.tax_split", "omit_when_empty": true, "description": "State/UT tax. Present on intra-state lines only, always equal to camt." },
-        { "key": "itm_det.csamt", "from": "derive:gstr1.cess" }
+        {
+          "key": "num",
+          "from": "derive:gstr1.item_num"
+        },
+        {
+          "key": "itm_det.txval",
+          "from": "field:txval"
+        },
+        {
+          "key": "itm_det.rt",
+          "from": "field:rt"
+        },
+        {
+          "key": "itm_det.iamt",
+          "from": "derive:gstr1.tax_split",
+          "omit_when_empty": true,
+          "description": "Integrated tax. Present on inter-state lines only."
+        },
+        {
+          "key": "itm_det.camt",
+          "from": "derive:gstr1.tax_split",
+          "omit_when_empty": true,
+          "description": "Central tax. Present on intra-state lines only."
+        },
+        {
+          "key": "itm_det.samt",
+          "from": "derive:gstr1.tax_split",
+          "omit_when_empty": true,
+          "description": "State/UT tax. Present on intra-state lines only, always equal to camt."
+        },
+        {
+          "key": "itm_det.csamt",
+          "from": "derive:gstr1.cess"
+        }
       ]
     },
-    "derivations": ["gstr1.item_num", "gstr1.tax_split", "gstr1.cess"],
+    "derivations": [
+      "gstr1.item_num",
+      "gstr1.tax_split",
+      "gstr1.cess"
+    ],
     "derivation_notes": {
       "gstr1.item_num": "Line item number is derived from the rate, not a sequence: num = rt * 100 + 1.",
       "gstr1.tax_split": "Identical to the B2B sections, and gated on the same codes: intra-state when the place of supply equals the supplier's state AND the note supply type is R or DE AND the supplier is not an SEZ unit. Intra-state: camt = samt = round(txval * rt * 0.005 * diff_percent, 2). Inter-state: iamt = round(txval * rt * 0.01 * diff_percent, 2). SEWOP forces every tax amount to 0.",
       "gstr1.cess": "csamt = round(Cess Amount, 2), or 0 when blank. Forced to 0 for note supply type SEWOP."
     }
   },
-
   "notes": [
     {
       "kind": "quirk",
-      "text": "The payload array is keyed 'nt', not 'inv', and the record fields are nt_num/nt_dt/ntty — but the nature of the underlying supply is still emitted as 'inv_typ', reusing the B2B invoice-type codes. The template column is called Note Supply Type and its dropdown is the shared INVTYPE range.",
-      "affects": ["inv_typ", "output.envelope"]
+      "text": "The payload array is keyed 'nt', not 'inv', and the record fields are nt_num/nt_dt/ntty \u2014 but the nature of the underlying supply is still emitted as 'inv_typ', reusing the B2B invoice-type codes. The template column is called Note Supply Type and its dropdown is the shared INVTYPE range.",
+      "affects": [
+        "inv_typ",
+        "output.envelope"
+      ]
     },
     {
       "kind": "quirk",
-      "text": "Taxable value must be STRICTLY positive here — a zero is rejected. Note value and cess need only be non-negative. A credit note is distinguished by its note type, not by negative amounts, so nothing in this table may be negative.",
-      "affects": ["txval", "val", "csamt"]
+      "text": "Taxable value must be STRICTLY positive here \u2014 a zero is rejected. Note value and cess need only be non-negative. A credit note is distinguished by its note type, not by negative amounts, so nothing in this table may be negative.",
+      "affects": [
+        "txval",
+        "val",
+        "csamt"
+      ]
     },
     {
       "kind": "quirk",
       "text": "Reverse Charge is mandatory with no default, unlike the B2B section where a blank becomes 'N'. Applicable % of Tax Rate and Cess Amount DO get defaults (100 and 0).",
-      "affects": ["rchrg"]
+      "affects": [
+        "rchrg"
+      ]
     },
     {
       "kind": "quirk",
       "text": "The reference compares Receiver Name when deciding whether two rows belong to the same note, which it does not do for B2B invoices. Rows sharing a note number therefore have to agree on the recipient's name as well as the recipient's GSTIN.",
-      "affects": ["cname"]
+      "affects": [
+        "cname"
+      ]
     },
     {
       "kind": "quirk",
       "text": "The template's note-reason named range is dangling: NOTERSN points at master!#REF!. The reason column was dropped from the workbook but the defined name was left behind, so no section in this template version uses the note-reason codes.",
-      "affects": ["output.invoice"]
+      "affects": [
+        "output.invoice"
+      ]
     },
     {
       "kind": "divergence",
-      "text": "Numeric cells may carry thousands separators — GSTN's own sample CSV for this table quotes a taxable value as \"4,981\". The reference strips them with a non-global replace, removing only the FIRST comma, so '1,234,567' is read as 1234: a silent thousandfold under-report. Every separator is stripped here instead.",
-      "affects": ["val", "txval", "csamt", "rt", "diff_percent"]
+      "text": "Numeric cells may carry thousands separators \u2014 GSTN's own sample CSV for this table quotes a taxable value as \"4,981\". The reference strips them with a non-global replace, removing only the FIRST comma, so '1,234,567' is read as 1234: a silent thousandfold under-report. Every separator is stripped here instead.",
+      "affects": [
+        "val",
+        "txval",
+        "csamt",
+        "rt",
+        "diff_percent"
+      ]
     },
     {
       "kind": "quirk",
       "text": "The item mapping consults a 'Supply Type' column to decide intra vs inter when one is present, overriding the place-of-supply comparison. This table has no such column, so that branch is inert here; it exists for the unregistered and amended variants.",
-      "affects": ["output.item"]
+      "affects": [
+        "output.item"
+      ]
     },
     {
-      "kind": "open_question",
-      "text": "The reference carries internal 'diffval' and 'status' (e-invoice status) fields on the note object between import and generation; whether either reaches the upload JSON is unconfirmed.",
-      "affects": ["output.invoice"]
+      "kind": "quirk",
+      "text": "The recipient's name is NOT sent to the portal. The reference strips cname from this section's envelope in removeCName() before writing the upload file, so the name is captured in the workbook for the filer's benefit only. Verified against a file captured from the tool.",
+      "affects": [
+        "cname"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "The internal 'diffval' flag never reaches the upload JSON \u2014 the reference deletes it alongside the tax-rate factor. This resolves what was previously an open question. Verified against a file captured from the tool.",
+      "affects": [
+        "output"
+      ]
     }
   ]
 }

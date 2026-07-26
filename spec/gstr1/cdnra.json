@@ -243,7 +243,10 @@
       "rt"
     ],
     "item_conflict": "last_wins",
-    "invoice_field_conflict": "error"
+    "invoice_field_conflict": "error",
+    "agree_fields": [
+      "cname"
+    ]
   },
   "output": {
     "envelope": {
@@ -252,11 +255,6 @@
           "key": "ctin",
           "from": "field:ctin",
           "description": "One envelope object per recipient."
-        },
-        {
-          "key": "cname",
-          "from": "field:cname",
-          "omit_when_empty": true
         },
         {
           "key": "nt",
@@ -301,7 +299,8 @@
         {
           "key": "diff_percent",
           "from": "field:diff_percent",
-          "description": "Factor, not percent."
+          "description": "Proportion of the tax rate that applies, as a factor. The reference emits this key ONLY when it is 0.65 and discards every other value, so an unscaled row carries no such key at all. Verified against a file captured from the tool.",
+          "only_when_value": 0.65
         },
         {
           "key": "rchrg",
@@ -418,10 +417,17 @@
       ]
     },
     {
-      "kind": "open_question",
-      "text": "The reference carries an internal 'diffval' field on the note object; whether it reaches the upload JSON is unconfirmed.",
+      "kind": "quirk",
+      "text": "The recipient's name is NOT sent to the portal. The reference strips cname from this section's envelope in removeCName() before writing the upload file, so the name is captured in the workbook for the filer's benefit only. Verified against a file captured from the tool.",
       "affects": [
-        "output.invoice"
+        "cname"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "The internal 'diffval' flag never reaches the upload JSON \u2014 the reference deletes it alongside the tax-rate factor. This resolves what was previously an open question. Verified against a file captured from the tool.",
+      "affects": [
+        "output"
       ]
     }
   ]

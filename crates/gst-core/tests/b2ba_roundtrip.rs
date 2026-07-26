@@ -102,7 +102,7 @@ fn every_derivation_the_spec_names_is_implemented() {
 fn an_amendment_carries_both_the_original_and_revised_identity() {
     assert_eq!(
         payload(&[base(5)], &september()),
-        r#"[{"ctin":"12GEOPS0823BBZH","cname":"Acme Traders","inv":[{"oinum":"INV-001","oidt":"14-07-2017","inum":"INV-001-R","idt":"05-09-2017","val":118000,"pos":"37","rchrg":"N","diff_percent":1,"inv_typ":"R","itms":[{"num":1801,"itm_det":{"txval":100000,"rt":18,"iamt":18000,"csamt":0}}]}]}]"#
+        r#"[{"ctin":"12GEOPS0823BBZH","inv":[{"oinum":"INV-001","oidt":"14-07-2017","inum":"INV-001-R","idt":"05-09-2017","val":118000,"pos":"37","rchrg":"N","inv_typ":"R","itms":[{"num":1801,"itm_det":{"txval":100000,"rt":18,"iamt":18000,"csamt":0}}]}]}]"#
     );
 }
 

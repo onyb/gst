@@ -84,7 +84,7 @@ fn every_derivation_the_spec_names_is_implemented() {
 fn an_amendment_carries_both_note_identities_at_the_top_level() {
     assert_eq!(
         payload(&[base(5)], &ctx()),
-        r#"[{"ont_num":"UN-001","ont_dt":"14-07-2017","nt_num":"UN-001-R","nt_dt":"05-09-2017","ntty":"C","val":295000,"typ":"B2CL","pos":"37","diff_percent":1,"itms":[{"num":1801,"itm_det":{"txval":250000,"rt":18,"iamt":45000,"csamt":0}}]}]"#
+        r#"[{"ont_num":"UN-001","ont_dt":"14-07-2017","nt_num":"UN-001-R","nt_dt":"05-09-2017","ntty":"C","val":295000,"typ":"B2CL","pos":"37","itms":[{"num":1801,"itm_det":{"txval":250000,"rt":18,"iamt":45000,"csamt":0}}]}]"#
     );
 }
 

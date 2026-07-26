@@ -90,7 +90,7 @@ fn a_single_interstate_invoice_produces_the_expected_payload() {
     // GSTIN is omitted rather than emitted blank.
     assert_eq!(
         payload(&rows, &maharashtra()),
-        r#"[{"ctin":"12GEOPS0823BBZH","cname":"Acme Traders","inv":[{"inum":"INV-001","idt":"14-07-2017","val":50000,"pos":"37","rchrg":"N","diff_percent":1,"inv_typ":"R","itms":[{"num":1801,"itm_det":{"txval":45000,"rt":18,"iamt":8100,"csamt":0}}]}]}]"#
+        r#"[{"ctin":"12GEOPS0823BBZH","inv":[{"inum":"INV-001","idt":"14-07-2017","val":50000,"pos":"37","rchrg":"N","inv_typ":"R","itms":[{"num":1801,"itm_det":{"txval":45000,"rt":18,"iamt":8100,"csamt":0}}]}]}]"#
     );
 }
 

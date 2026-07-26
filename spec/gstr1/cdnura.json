@@ -269,7 +269,8 @@
         {
           "key": "diff_percent",
           "from": "field:diff_percent",
-          "description": "Factor, not percent."
+          "description": "Proportion of the tax rate that applies, as a factor. The reference emits this key ONLY when it is 0.65 and discards every other value, so an unscaled row carries no such key at all. Verified against a file captured from the tool.",
+          "only_when_value": 0.65
         },
         {
           "key": "itms",
@@ -361,13 +362,6 @@
     },
     {
       "kind": "open_question",
-      "text": "The reference carries an internal 'diffval' field on the note object; whether it reaches the upload JSON is unconfirmed.",
-      "affects": [
-        "output.invoice"
-      ]
-    },
-    {
-      "kind": "open_question",
       "text": "The reference groups rows into one amendment when EITHER the revised or the original note number matches, then rejects the group on any other disagreement. Grouping here keys on the revised number alone.",
       "affects": [
         "ont_num",
@@ -381,6 +375,13 @@
         "ont_dt",
         "nt_dt",
         "val"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "The internal 'diffval' flag never reaches the upload JSON \u2014 the reference deletes it alongside the tax-rate factor. This resolves what was previously an open question. Verified against a file captured from the tool.",
+      "affects": [
+        "output"
       ]
     }
   ]
