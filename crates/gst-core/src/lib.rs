@@ -12,4 +12,5 @@ pub mod masters;
 pub mod payload;
 pub mod record;
 pub mod spec;
+pub mod upload;
 pub mod validate;

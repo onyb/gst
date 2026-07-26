@@ -1,0 +1,68 @@
+{
+  "description": "Shape of the complete GSTR-1 upload file: the wrapper the portal expects around the per-section payloads. Key ORDER is significant for byte-level comparison against the reference tool and is reproduced exactly as the official tool emits it.",
+  "provenance": {
+    "offline_tool": "V3.2.4",
+    "source": "The tool builds this wrapper by string concatenation in utility/common.js (formDataFormat), so the key order and the empty-value shapes below are literal.",
+    "verified_on": "2026-07-26"
+  },
+
+  "version": "GST3.2.4",
+  "hash": "hash",
+
+  "notes": [
+    "`version` is a literal tied to the tool release, not to the return.",
+    "`hash` is the literal four-character string 'hash' — a placeholder the tool never fills in.",
+    "`gt` and `cur_gt` (aggregate turnover) appear immediately after `fp` and only when a numeric turnover is supplied; the tool omits both when the value is not a number.",
+    "`hsn` changes shape with the return period: a single `data` array before 05-2025, and `hsn_b2b` / `hsn_b2c` arrays from 05-2025 onward (HSN_BIFURCATION_START_DATE).",
+    "`hsnSac` is emitted as an always-empty array alongside `hsn`; no template sheet feeds it.",
+    "Every section key is present even when empty, so an upload file always carries the full set."
+  ],
+
+  "hsn_bifurcation_start_period": "052025",
+
+  "filename": {
+    "pattern": "returns_{fp}_R1_{gstin}_offline.json",
+    "description": "The tool writes returns_<MMYYYY>_<form minus its first three characters>_<GSTIN>_offline.json; for GSTR1 that middle segment is 'R1'."
+  },
+
+  "chunking": {
+    "max_bytes": 4928307,
+    "description": "The tool splits an upload into chunks at 4.7 MiB (4.7 * 1024 * 1024), not the 5 MB the portal documentation mentions."
+  },
+
+  "keys": [
+    { "key": "gstin", "from": "context:gstin" },
+    { "key": "fp", "from": "context:period" },
+    { "key": "gt", "from": "context:gross_turnover", "omit_when_absent": true },
+    { "key": "cur_gt", "from": "context:current_gross_turnover", "omit_when_absent": true },
+    { "key": "version", "from": "literal:version" },
+    { "key": "hash", "from": "literal:hash" },
+    { "key": "b2b", "from": "section:b2b" },
+    { "key": "b2ba", "from": "section:b2ba" },
+    { "key": "b2cl", "from": "section:b2cl" },
+    { "key": "b2cla", "from": "section:b2cla" },
+    { "key": "b2cs", "from": "section:b2cs" },
+    { "key": "b2csa", "from": "section:b2csa" },
+    { "key": "nil", "from": "wrapped:nil", "wrapper": "inv" },
+    { "key": "exp", "from": "section:exp" },
+    { "key": "expa", "from": "section:expa" },
+    { "key": "hsnSac", "from": "empty:array" },
+    { "key": "cdnra", "from": "section:cdnra" },
+    { "key": "at", "from": "section:at" },
+    { "key": "ata", "from": "section:ata" },
+    { "key": "cdnr", "from": "section:cdnr" },
+    { "key": "cdnur", "from": "section:cdnur" },
+    { "key": "cdnura", "from": "section:cdnura" },
+    { "key": "atadj", "from": "section:atadj" },
+    { "key": "atadja", "from": "section:atadja" },
+    { "key": "doc_issue", "from": "wrapped:doc_issue", "wrapper": "doc_det" },
+    { "key": "hsn", "from": "hsn" },
+    { "key": "supeco", "from": "object", "members": ["clttx", "paytx"] },
+    { "key": "supecoa", "from": "object", "members": ["clttxa", "paytxa"] },
+    { "key": "ecom", "from": "object", "members": ["b2b", "b2c", "urp2b", "urp2c"] },
+    { "key": "ecoma", "from": "object", "members": ["b2ba", "b2ca", "urp2ba", "urp2ca"] }
+  ],
+
+  "hsn_before_bifurcation": { "wrapper": "data" },
+  "hsn_from_bifurcation": { "members": ["hsn_b2b", "hsn_b2c"] }
+}
