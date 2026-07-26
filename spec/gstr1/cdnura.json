@@ -1,0 +1,387 @@
+{
+  "$schema": "../section.schema.json",
+  "section": "cdnura",
+  "return": "gstr1",
+  "title": "Amended Credit/Debit Notes (Unregistered) - 9C",
+  "provenance": {
+    "offline_tool": "V3.2.4",
+    "excel_template": "GSTR1_Excel_Workbook_Template_V2.2.xlsx",
+    "csv_template": "Section_wise_CSV_files/GSTR1/cdnura.csv",
+    "verified_on": "2026-07-26"
+  },
+  "source": {
+    "excel": {
+      "sheet": "cdnura",
+      "header_row": 4,
+      "first_data_row": 5
+    },
+    "csv": {
+      "file": "cdnura.csv",
+      "header_row": 1
+    }
+  },
+  "fields": [
+    {
+      "id": "typ",
+      "column": "UR Type",
+      "order": 0,
+      "type": "text",
+      "required": true,
+      "enum": [
+        "B2CL",
+        "EXPWP",
+        "EXPWOP"
+      ],
+      "description": "Nature of the unregistered supply."
+    },
+    {
+      "id": "ont_num",
+      "column": "Original Note Number",
+      "order": 1,
+      "type": "text",
+      "required": true,
+      "pattern": "^[a-zA-Z0-9\\-/]{1,16}$",
+      "max_length": 16,
+      "constraints": [
+        "numeric_value_not_zero"
+      ],
+      "description": "Note number as originally reported. Identifies which already-filed note this row amends."
+    },
+    {
+      "id": "ont_dt",
+      "column": "Original Note Date",
+      "order": 2,
+      "type": "date",
+      "required": true,
+      "constraints": [
+        "date_within_return_window"
+      ],
+      "transform": "date_normalize",
+      "description": "Note date as originally reported."
+    },
+    {
+      "id": "nt_num",
+      "column": "Revised Note Number",
+      "order": 3,
+      "type": "text",
+      "required": true,
+      "pattern": "^[a-zA-Z0-9\\-/]{1,16}$",
+      "max_length": 16,
+      "constraints": [
+        "numeric_value_not_zero"
+      ],
+      "description": "Corrected note number."
+    },
+    {
+      "id": "nt_dt",
+      "column": "Revised Note Date",
+      "order": 4,
+      "type": "date",
+      "required": true,
+      "constraints": [
+        "date_within_return_window"
+      ],
+      "transform": "date_normalize",
+      "description": "Corrected note date."
+    },
+    {
+      "id": "ntty",
+      "column": "Note Type",
+      "order": 5,
+      "type": "text",
+      "required": true,
+      "enum": [
+        "C",
+        "D"
+      ],
+      "description": "'C' for a credit note, 'D' for a debit note."
+    },
+    {
+      "id": "pos",
+      "column": "Place Of Supply",
+      "order": 6,
+      "type": "state_code",
+      "required": false,
+      "constraints": [
+        "pos_code_range",
+        "pos_differs_from_supplier_state"
+      ],
+      "transform": "state_code_prefix",
+      "description": "Place of supply as 'NN-Name'; only the numeric prefix is retained. Required for a B2CL note and forbidden for an export note, so it is declared optional here and gated by rules. When present it must differ from the supplier's own state."
+    },
+    {
+      "id": "val",
+      "column": "Note Value",
+      "order": 7,
+      "type": "decimal",
+      "required": true,
+      "pattern": "^(\\d{0,13})(\\.\\d{0,2})?$",
+      "description": "Corrected total value of the note including tax. Non-negative."
+    },
+    {
+      "id": "diff_percent",
+      "column": "Applicable % of Tax Rate",
+      "order": 8,
+      "type": "decimal",
+      "required": true,
+      "default": 100,
+      "transform": "percent_to_factor",
+      "enum": [
+        100,
+        65
+      ],
+      "description": "Proportion of the tax rate that applies. Must be 100 for exports."
+    },
+    {
+      "id": "rt",
+      "column": "Rate",
+      "order": 9,
+      "type": "decimal",
+      "required": true,
+      "enum_ref": "../masters/tax-rates.json#/item",
+      "description": "Combined tax rate for this line, in percent."
+    },
+    {
+      "id": "txval",
+      "column": "Taxable Value",
+      "order": 10,
+      "type": "decimal",
+      "required": true,
+      "pattern": "^(\\d{0,11})(\\.\\d{0,2})?$",
+      "constraints": [
+        {
+          "name": "min_exclusive",
+          "value": 0,
+          "description": "Must be strictly positive \u2014 a zero taxable value is rejected."
+        }
+      ],
+      "description": "Corrected taxable value at this rate, excluding tax. Strictly positive."
+    },
+    {
+      "id": "csamt",
+      "column": "Cess Amount",
+      "order": 11,
+      "type": "decimal",
+      "required": false,
+      "default": 0,
+      "pattern": "^(\\d{0,11})(\\.\\d{0,2})?$",
+      "description": "Corrected cess on this line. Blank is treated as 0."
+    }
+  ],
+  "rules": [
+    {
+      "id": "cdnura.pos_required_for_domestic",
+      "description": "A B2CL note is a domestic supply, so it must name a place of supply.",
+      "when": {
+        "field": "typ",
+        "eq": "B2CL"
+      },
+      "assert": {
+        "field": "pos",
+        "empty": false
+      },
+      "message": "Place Of Supply is required when UR Type is 'B2CL'."
+    },
+    {
+      "id": "cdnura.pos_forbidden_for_exports",
+      "description": "An export note has no Indian place of supply; the reference requires the cell to be blank.",
+      "when": {
+        "field": "typ",
+        "in": [
+          "EXPWP",
+          "EXPWOP"
+        ]
+      },
+      "assert": {
+        "field": "pos",
+        "empty": true
+      },
+      "message": "Place Of Supply must be blank when UR Type is 'EXPWP' or 'EXPWOP'."
+    },
+    {
+      "id": "cdnura.exports_take_the_full_rate",
+      "description": "The reduced 65% rate is not available on exports.",
+      "when": {
+        "field": "typ",
+        "in": [
+          "EXPWP",
+          "EXPWOP"
+        ]
+      },
+      "assert": {
+        "field": "diff_percent",
+        "eq": 1
+      },
+      "message": "Applicable % of Tax Rate must be 100 when UR Type is 'EXPWP' or 'EXPWOP'."
+    }
+  ],
+  "grouping": {
+    "invoice_key": [
+      "nt_num"
+    ],
+    "invoice_key_case_insensitive": true,
+    "item_key": [
+      "rt"
+    ],
+    "item_conflict": "last_wins",
+    "invoice_field_conflict": "error"
+  },
+  "output": {
+    "invoice": {
+      "keys": [
+        {
+          "key": "ont_num",
+          "from": "field:ont_num"
+        },
+        {
+          "key": "ont_dt",
+          "from": "field:ont_dt",
+          "description": "Normalized to DD-MM-YYYY."
+        },
+        {
+          "key": "nt_num",
+          "from": "field:nt_num"
+        },
+        {
+          "key": "nt_dt",
+          "from": "field:nt_dt",
+          "description": "Normalized to DD-MM-YYYY."
+        },
+        {
+          "key": "ntty",
+          "from": "field:ntty"
+        },
+        {
+          "key": "val",
+          "from": "field:val"
+        },
+        {
+          "key": "typ",
+          "from": "field:typ",
+          "description": "UR Type: B2CL, EXPWP or EXPWOP."
+        },
+        {
+          "key": "pos",
+          "from": "field:pos",
+          "omit_when_empty": true,
+          "description": "Two-digit state code. Absent on export notes."
+        },
+        {
+          "key": "diff_percent",
+          "from": "field:diff_percent",
+          "description": "Factor, not percent."
+        },
+        {
+          "key": "itms",
+          "from": "nested:item"
+        }
+      ]
+    },
+    "item": {
+      "keys": [
+        {
+          "key": "num",
+          "from": "derive:gstr1.item_num"
+        },
+        {
+          "key": "itm_det.txval",
+          "from": "field:txval"
+        },
+        {
+          "key": "itm_det.rt",
+          "from": "field:rt"
+        },
+        {
+          "key": "itm_det.iamt",
+          "from": "derive:gstr1.tax_split_unregistered",
+          "description": "Integrated tax. Always present: a note to an unregistered person is never split into central and state tax."
+        },
+        {
+          "key": "itm_det.csamt",
+          "from": "derive:gstr1.tax_split_unregistered"
+        }
+      ]
+    },
+    "derivations": [
+      "gstr1.item_num",
+      "gstr1.tax_split_unregistered"
+    ],
+    "derivation_notes": {
+      "gstr1.item_num": "Line item number is derived from the rate, not a sequence: num = rt * 100 + 1.",
+      "gstr1.tax_split_unregistered": "Always inter-state \u2014 the reference emits no camt/samt branch for unregistered notes at all. iamt = round(txval * rt * 0.01 * diff_percent, 2), forced to 0 when UR Type is EXPWOP (an export without payment of tax). csamt = round(Cess Amount, 2), also forced to 0 for EXPWOP, and 0 when blank."
+    }
+  },
+  "notes": [
+    {
+      "kind": "quirk",
+      "text": "Tax is ALWAYS integrated here. The reference's item mapping for unregistered notes has no central/state branch whatsoever \u2014 not merely an unreachable one, as in B2C(Large), but no code path at all. camt and samt are therefore absent from the payload mapping.",
+      "affects": [
+        "output.item"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "UR Type drives three cross-field rules: a B2CL note needs a place of supply, an export note must leave it blank, and an export note may not use the reduced 65% rate. The place of supply, when present, must also differ from the supplier's own state.",
+      "affects": [
+        "typ",
+        "pos",
+        "diff_percent"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "An EXPWOP note (export without payment of tax) zeroes both the integrated tax and the cess, the same way SEZ-without-payment does in the B2B sections.",
+      "affects": [
+        "typ"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "Records sit at the top level of the payload while still carrying line items \u2014 there is no envelope object, because there is no registered counterparty to group by.",
+      "affects": [
+        "output.invoice"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "Taxable value must be STRICTLY positive and note value non-negative. GSTN's own sample CSV for the unamended table gives a note value of -25000, which import rejects on both the pattern and the non-negative check.",
+      "affects": [
+        "txval",
+        "val"
+      ]
+    },
+    {
+      "kind": "divergence",
+      "text": "Numeric cells may carry thousands separators. The reference strips only the FIRST comma, so '1,234,567' reads as 1234; every separator is stripped here.",
+      "affects": [
+        "val",
+        "txval",
+        "csamt"
+      ]
+    },
+    {
+      "kind": "open_question",
+      "text": "The reference carries an internal 'diffval' field on the note object; whether it reaches the upload JSON is unconfirmed.",
+      "affects": [
+        "output.invoice"
+      ]
+    },
+    {
+      "kind": "open_question",
+      "text": "The reference groups rows into one amendment when EITHER the revised or the original note number matches, then rejects the group on any other disagreement. Grouping here keys on the revised number alone.",
+      "affects": [
+        "ont_num",
+        "nt_num"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "Nothing requires the revised note to postdate the original \u2014 the date-ordering routine is unreachable. GSTN's sample CSV gives a note value of 0, which passes the non-negative check.",
+      "affects": [
+        "ont_dt",
+        "nt_dt",
+        "val"
+      ]
+    }
+  ]
+}
