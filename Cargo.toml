@@ -10,11 +10,13 @@ repository = "https://github.com/onyb/gst"
 
 [workspace.dependencies]
 anyhow = "1"
+calamine = "0.36"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 clap = { version = "4", features = ["derive"] }
 csv = "1"
 regex = "1"
 rust_decimal = { version = "1", features = ["serde"] }
+rust_xlsxwriter = "0.96"
 serde = { version = "1", features = ["derive"] }
 # preserve_order keeps generated payload keys in spec order, so output is
 # byte-stable and diffs against golden files stay readable.

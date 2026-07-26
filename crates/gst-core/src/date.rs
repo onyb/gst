@@ -42,6 +42,16 @@ impl ReturnPeriod {
         (1..=12).contains(&month).then_some(Self { month, year })
     }
 
+    /// Parse the `MMYYYY` form the portal and the official tool both use for a
+    /// return period, e.g. `072017`.
+    pub fn parse(text: &str) -> Option<Self> {
+        let text = text.trim();
+        if text.len() != 6 || !text.chars().all(|c| c.is_ascii_digit()) {
+            return None;
+        }
+        Self::new(text[..2].parse().ok()?, text[2..].parse().ok()?)
+    }
+
     /// Last day of the period — the latest date any document may carry.
     pub fn last_day(&self) -> NaiveDate {
         let (next_month, next_year) = if self.month == 12 {
@@ -203,6 +213,21 @@ mod tests {
             ReturnPeriod::new(2, 2023).unwrap().last_day(),
             ymd(2023, 2, 28)
         );
+    }
+
+    #[test]
+    fn parses_the_mmyyyy_period_form() {
+        assert_eq!(ReturnPeriod::parse("072017"), ReturnPeriod::new(7, 2017));
+        assert_eq!(ReturnPeriod::parse("122024"), ReturnPeriod::new(12, 2024));
+        assert_eq!(ReturnPeriod::parse(" 072017 "), ReturnPeriod::new(7, 2017));
+
+        // Month must be real, and the shape is exactly six digits.
+        assert_eq!(ReturnPeriod::parse("132017"), None);
+        assert_eq!(ReturnPeriod::parse("002017"), None);
+        assert_eq!(ReturnPeriod::parse("72017"), None);
+        assert_eq!(ReturnPeriod::parse("07-2017"), None);
+        assert_eq!(ReturnPeriod::parse("0720177"), None);
+        assert_eq!(ReturnPeriod::parse("abcdef"), None);
     }
 
     #[test]

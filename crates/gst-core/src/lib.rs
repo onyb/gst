@@ -7,6 +7,7 @@
 pub mod date;
 pub mod generate;
 pub mod gstin;
+pub mod import;
 pub mod masters;
 pub mod payload;
 pub mod record;
