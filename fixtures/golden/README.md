@@ -99,15 +99,16 @@ From a third capture, of a workbook with only one HSN half populated:
   happened to populate both halves. This implementation already behaved this
   way, and the one-sided file is byte-identical too.
 
-## The e-commerce sections, captured ahead of implementation
+## The e-commerce sections
+
+Captured BEFORE they were implemented, so the target shapes were ground truth
+rather than another reading of the source. The implementation then reproduced
+this file byte for byte on its first run, and the main reference file now covers
+all thirty sheets.
 
 `gstr1-eco-062025-reference.json` is the tool's upload output for
 `fixtures/gstr1/eco-workbook.xlsx`, a workbook exercising all ten ECO sheets at
-once. Those sheets are not implemented yet; this file was captured first so the
-target shapes are ground truth rather than another reading of the source, and so
-the eventual implementation has something to be checked against on day one.
-
-Ten sheets map into four payload objects, and the shapes are less uniform than
+once. Ten sheets map into four payload objects, and the shapes are less uniform than
 anywhere else in the return:
 
 | Sheet | Payload | Shape |

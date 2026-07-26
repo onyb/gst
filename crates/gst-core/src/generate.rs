@@ -23,6 +23,9 @@ const FULL_RATE: Decimal = Decimal::from_parts(1, 0, 0, false, 2); // 0.01
 pub struct Generated {
     /// One entry per envelope, in first-seen order.
     pub envelopes: Vec<Json>,
+    /// Which member of the payload object each envelope belongs to, for the
+    /// sections that split one sheet across several. Empty otherwise.
+    pub members: Vec<Option<String>>,
     /// Problems that only surface once rows are grouped.
     pub findings: Vec<Finding>,
 }
@@ -57,6 +60,7 @@ pub fn generate(spec: &SectionSpec, records: &[Record], ctx: &FilingContext) -> 
         for (index, record) in records.iter().enumerate() {
             let json = build_object(record_spec, record, ctx, index, &mut out.findings);
             out.envelopes.push(json);
+            out.members.push(member_of(spec, record));
         }
         return out;
     }
@@ -182,6 +186,7 @@ pub fn generate(spec: &SectionSpec, records: &[Record], ctx: &FilingContext) -> 
             for (_, invoice) in &envelope.invoices {
                 out.envelopes
                     .push(build_invoice(spec, invoice, ctx, &mut out.findings));
+                out.members.push(member_of(spec, &invoice.head));
             }
         }
         return out;
@@ -190,6 +195,7 @@ pub fn generate(spec: &SectionSpec, records: &[Record], ctx: &FilingContext) -> 
     for (_, envelope) in envelopes {
         out.envelopes
             .push(build_envelope(spec, &envelope, ctx, &mut out.findings));
+        out.members.push(member_of(spec, &envelope.head));
     }
     out
 }
@@ -288,6 +294,7 @@ fn build_envelope(
                     .map(|(_, inv)| build_invoice(spec, inv, ctx, findings))
                     .collect(),
             ),
+            Source::Literal(v) => Json::Str(v.clone()),
             Source::Nested(Level::Item) => Json::Null,
         };
         if omitted(key, &value) {
@@ -320,6 +327,7 @@ fn build_invoice(
                     .map(|(i, (_, rec))| build_item(spec, rec, ctx, i, findings))
                     .collect(),
             ),
+            Source::Literal(v) => Json::Str(v.clone()),
             Source::Nested(Level::Invoice) => Json::Null,
         };
         if omitted(key, &value) {
@@ -345,6 +353,7 @@ fn build_item(
         let value = match &key.from {
             Source::Field(id) => cell_json(record, id),
             Source::Derive(name) => derive(name, leaf(&key.key), record, ctx, index, findings),
+            Source::Literal(v) => Json::Str(v.clone()),
             Source::Nested(_) => Json::Null,
         };
         if omitted(key, &value) {
@@ -369,6 +378,7 @@ fn build_object(
         let value = match &key.from {
             Source::Field(id) => cell_json(record, id),
             Source::Derive(name) => derive(name, leaf(&key.key), record, ctx, index, findings),
+            Source::Literal(v) => Json::Str(v.clone()),
             Source::Nested(_) => Json::Null,
         };
         if omitted(key, &value) {
@@ -377,6 +387,13 @@ fn build_object(
         out.insert_path(&key.key, value);
     }
     out
+}
+
+/// Which member of its payload object a record belongs to, for sections that
+/// split one sheet across several. `None` when the section does not split.
+fn member_of(spec: &SectionSpec, record: &Record) -> Option<String> {
+    let split = spec.output.member_from.as_ref()?;
+    split.map.get(&record.text(&split.field)).cloned()
 }
 
 /// Whether a key is dropped rather than emitted: either because it is empty and
@@ -509,6 +526,34 @@ pub fn tax_split_by_pos(record: &Record, ctx: &FilingContext) -> TaxSplit {
             iamt: Some(round2(txval * rate * FULL_RATE * factor)),
             camt: None,
             samt: None,
+            csamt: cess,
+        }
+    }
+}
+
+/// Tax on an e-commerce supply reported by the operator.
+///
+/// Unlike every other section, both halves are emitted at once: an inter-state
+/// row carries `iamt` alongside `camt: 0` and `samt: 0`, and an intra-state row
+/// carries the split alongside `iamt: 0`. Confirmed against a captured file.
+pub fn tax_split_ecom(record: &Record, ctx: &FilingContext) -> TaxSplit {
+    let txval = record.number("txval").unwrap_or_default();
+    let rate = record.number("rt").unwrap_or_default();
+    let cess = round2(record.number("csamt").unwrap_or_default());
+
+    if is_intra_state_by_pos(record, ctx) {
+        let half = round2(txval * rate * HALF_RATE);
+        TaxSplit {
+            iamt: Some(Decimal::ZERO),
+            camt: Some(half),
+            samt: Some(half),
+            csamt: cess,
+        }
+    } else {
+        TaxSplit {
+            iamt: Some(round2(txval * rate * FULL_RATE)),
+            camt: Some(Decimal::ZERO),
+            samt: Some(Decimal::ZERO),
             csamt: cess,
         }
     }
@@ -706,8 +751,10 @@ fn derive(
         | "gstr1.tax_split_by_pos"
         | "gstr1.tax_split_unregistered"
         | "gstr1.tax_export"
-        | "gstr1.tax_split_advance" => {
+        | "gstr1.tax_split_advance"
+        | "gstr1.tax_split_ecom" => {
             let split = match name {
+                "gstr1.tax_split_ecom" => tax_split_ecom(record, ctx),
                 "gstr1.tax_split_by_pos" => tax_split_by_pos(record, ctx),
                 "gstr1.tax_export" => tax_export(record, ctx),
                 "gstr1.tax_split_advance" => tax_split_advance(record, ctx),
@@ -768,6 +815,7 @@ pub fn unimplemented_derivations(spec: &SectionSpec) -> Vec<&str> {
         "gstr1.tax_split_unregistered",
         "gstr1.tax_export",
         "gstr1.tax_split_advance",
+        "gstr1.tax_split_ecom",
         "gstr1.supply_type",
         "gstr1.cess",
         "gstr1.cess_unguarded",

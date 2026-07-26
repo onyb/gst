@@ -1,0 +1,158 @@
+{
+  "$schema": "../section.schema.json",
+  "section": "ecomurp2c",
+  "return": "gstr1",
+  "title": "Supplies under section 9(5) by unregistered suppliers to unregistered persons - 15",
+  "provenance": {
+    "offline_tool": "V3.2.4",
+    "excel_template": "GSTR1_Excel_Workbook_Template_V2.2.xlsx",
+    "csv_template": "Section_wise_CSV_files/GSTR1/ecourp2c.csv",
+    "verified_on": "2026-07-26"
+  },
+  "source": {
+    "excel": {
+      "sheet": "ecourp2c",
+      "header_row": 4,
+      "first_data_row": 5
+    },
+    "csv": {
+      "file": "ecourp2c.csv",
+      "header_row": 1
+    }
+  },
+  "fields": [
+    {
+      "id": "pos",
+      "column": "Place Of Supply",
+      "order": 0,
+      "type": "state_code",
+      "required": true,
+      "constraints": [
+        "pos_code_range"
+      ],
+      "transform": "state_code_prefix",
+      "description": "Place of supply as 'NN-Name'; only the numeric prefix is kept. Decides the tax split."
+    },
+    {
+      "id": "txval",
+      "column": "Taxable Value",
+      "order": 1,
+      "type": "decimal",
+      "required": true,
+      "pattern": "^(\\d{0,11})(\\.\\d{0,2})?$",
+      "round_to": 2,
+      "description": "Taxable value at this rate, excluding tax."
+    },
+    {
+      "id": "rt",
+      "column": "Rate",
+      "order": 2,
+      "type": "decimal",
+      "required": true,
+      "enum_ref": "../masters/tax-rates.json#/item",
+      "description": "Combined tax rate for this line, in percent."
+    },
+    {
+      "id": "csamt",
+      "column": "Cess Amount",
+      "order": 3,
+      "type": "decimal",
+      "required": false,
+      "default": 0,
+      "pattern": "^(\\d{0,11})(\\.\\d{0,2})?$",
+      "round_to": 2,
+      "description": "Cess on this line. Must be an explicit 0 when there is none \u2014 see the quirk note."
+    }
+  ],
+  "rules": [],
+  "grouping": {},
+  "output": {
+    "record": {
+      "keys": [
+        {
+          "key": "pos",
+          "from": "field:pos"
+        },
+        {
+          "key": "txval",
+          "from": "field:txval"
+        },
+        {
+          "key": "rt",
+          "from": "field:rt"
+        },
+        {
+          "key": "csamt",
+          "from": "derive:gstr1.tax_split_ecom"
+        },
+        {
+          "key": "sply_ty",
+          "from": "derive:gstr1.supply_type",
+          "description": "'INTER' or 'INTRA', decided by the place of supply against the filer's own state."
+        },
+        {
+          "key": "camt",
+          "from": "derive:gstr1.tax_split_ecom"
+        },
+        {
+          "key": "samt",
+          "from": "derive:gstr1.tax_split_ecom"
+        },
+        {
+          "key": "iamt",
+          "from": "derive:gstr1.tax_split_ecom"
+        },
+        {
+          "key": "flag",
+          "from": "literal:N",
+          "description": "Stamped on every e-commerce record; no column supplies it."
+        }
+      ]
+    },
+    "derivations": [
+      "gstr1.supply_type",
+      "gstr1.tax_split_ecom"
+    ],
+    "derivation_notes": {
+      "gstr1.supply_type": "'INTRA' when the place of supply is the filer's own state and the filer is not an SEZ unit.",
+      "gstr1.tax_split_ecom": "BOTH halves are emitted at once. Inter-state: iamt = round(txval * rt * 0.01, 2) with camt and samt both 0. Intra-state: camt = samt = round(txval * rt * 0.005, 2) with iamt 0. csamt = round(Cess Amount, 2)."
+    }
+  },
+  "notes": [
+    {
+      "kind": "quirk",
+      "text": "A BLANK CESS AMOUNT IS REPORTED AS A MISSING HEADER COLUMN. The reference checks each column's presence against the parsed ROW rather than the header row, and the spreadsheet reader omits blank cells \u2014 so an empty cess reads as an absent column, the row is rejected, and the error names the wrong problem entirely. Every row must carry an explicit 0. This implementation defaults a blank to 0, producing the same payload the reference gives an explicit 0.",
+      "affects": [
+        "csamt"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "Every record carries flag: \"N\". No column supplies it, the reference writes it unconditionally, and no other section in the return emits it. Verified against a captured file.",
+      "affects": [
+        "output"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "This table emits BOTH tax halves on every record: an inter-state row carries iamt alongside camt: 0 and samt: 0, and an intra-state row carries the split alongside iamt: 0. Every other section in the return emits one or the other, never both. Verified against a captured file.",
+      "affects": [
+        "output.record"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "The payload key order is not the column order and is not intuitive: csamt appears before sply_ty, which is followed by camt, samt, iamt and finally flag. Emitting the tax keys together after sply_ty would be byte-different.",
+      "affects": [
+        "output.record"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "The narrowest sheet in the return: four columns, no counterparty on either side. Both the supplier and the recipient are unregistered, so only the place of supply, rate and amounts are reported.",
+      "affects": [
+        "output"
+      ]
+    }
+  ]
+}

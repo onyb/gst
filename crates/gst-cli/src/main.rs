@@ -429,7 +429,7 @@ fn run_upload(
         }
     };
 
-    let mut sections: std::collections::HashMap<String, Vec<gst_core::payload::Json>> =
+    let mut sections: std::collections::HashMap<String, gst_core::generate::Generated> =
         std::collections::HashMap::new();
     let mut findings: Vec<Finding> = Vec::new();
     let mut read = 0usize;
@@ -463,7 +463,7 @@ fn run_upload(
         findings.extend(report.findings);
         findings.extend(out.findings.clone());
         if !out.envelopes.is_empty() {
-            sections.insert(spec.section.clone(), out.envelopes);
+            sections.insert(spec.section.clone(), out);
         }
     }
 

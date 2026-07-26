@@ -34,7 +34,7 @@ fn build_upload() -> String {
     };
     let workbook = repo_path("fixtures/gstr1/demo-workbook.xlsx");
 
-    let mut sections: HashMap<String, Vec<gst_core::payload::Json>> = HashMap::new();
+    let mut sections: HashMap<String, gst_core::generate::Generated> = HashMap::new();
     for section in spec::sections() {
         let rows = match gst_core::import::read(&workbook, section) {
             Ok(rows) => rows,
@@ -53,7 +53,7 @@ fn build_upload() -> String {
         );
         let out = generate(section, &report.records, &ctx);
         if !out.envelopes.is_empty() {
-            sections.insert(section.section.clone(), out.envelopes);
+            sections.insert(section.section.clone(), out);
         }
     }
     upload::build(&sections, &ctx, Turnover::default()).to_json()

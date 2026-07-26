@@ -1,0 +1,222 @@
+{
+  "$schema": "../section.schema.json",
+  "section": "supecoa",
+  "return": "gstr1",
+  "title": "Amended supplies through an e-commerce operator - 14A",
+  "provenance": {
+    "offline_tool": "V3.2.4",
+    "excel_template": "GSTR1_Excel_Workbook_Template_V2.2.xlsx",
+    "csv_template": "Section_wise_CSV_files/GSTR1/ecoa.csv",
+    "verified_on": "2026-07-26"
+  },
+  "source": {
+    "excel": {
+      "sheet": "ecoa",
+      "header_row": 4,
+      "first_data_row": 5
+    },
+    "csv": {
+      "file": "ecoa.csv",
+      "header_row": 1
+    }
+  },
+  "fields": [
+    {
+      "id": "nat_supp",
+      "column": "Nature of Supply",
+      "order": 0,
+      "type": "text",
+      "required": true,
+      "enum": [
+        "Liable to collect tax u/s 52(TCS)",
+        "Liable to pay tax u/s 9(5)"
+      ],
+      "description": "Whether the operator collects tax under section 52 or pays it under section 9(5). Selects which member of the payload object the row lands in, and is not itself emitted."
+    },
+    {
+      "id": "fy",
+      "column": "Financial Year",
+      "order": 1,
+      "type": "text",
+      "required": true,
+      "enum_ref": "../masters/financial-years.json#/years",
+      "description": "Financial year of the period being amended."
+    },
+    {
+      "id": "omonth",
+      "column": "Original Month/Quarter",
+      "order": 2,
+      "type": "text",
+      "required": true,
+      "enum_ref": "../masters/months.json#/names",
+      "description": "Month of the period being amended, spelled out in capitals."
+    },
+    {
+      "id": "oetin",
+      "column": "Original GSTIN of E-Commerce Operator",
+      "order": 3,
+      "type": "gstin",
+      "required": true,
+      "accepts": [
+        "eco"
+      ],
+      "description": "Operator's registration as originally reported."
+    },
+    {
+      "id": "etin",
+      "column": "Revised GSTIN of E-Commerce Operator",
+      "order": 4,
+      "type": "gstin",
+      "required": true,
+      "accepts": [
+        "eco"
+      ],
+      "description": "Corrected operator registration."
+    },
+    {
+      "id": "cname",
+      "column": "E-Commerce Operator Name",
+      "order": 5,
+      "type": "text",
+      "required": false,
+      "pattern": "^[a-zA-Z0-9_&'\\-./,()?@!#%$~*;+= ]{1,99}$",
+      "max_length": 99,
+      "description": "Operator's trade name. Stripped before upload, like every other counterparty name."
+    },
+    {
+      "id": "suppval",
+      "column": "Revised Net value of supplies",
+      "order": 6,
+      "type": "decimal",
+      "required": true,
+      "pattern": "^(\\d{0,13})(\\.\\d{0,2})?$",
+      "round_to": 2,
+      "description": "Net value of supplies made through the operator."
+    },
+    {
+      "id": "igst",
+      "column": "Integrated tax",
+      "order": 7,
+      "type": "decimal",
+      "required": false,
+      "default": 0,
+      "pattern": "^-?(\\d{0,11})(\\.\\d{0,2})?$",
+      "round_to": 2,
+      "description": "Integrated tax on those supplies. Entered directly rather than derived from a rate."
+    },
+    {
+      "id": "cgst",
+      "column": "Central tax",
+      "order": 8,
+      "type": "decimal",
+      "required": false,
+      "default": 0,
+      "pattern": "^-?(\\d{0,11})(\\.\\d{0,2})?$",
+      "round_to": 2,
+      "description": "Central tax on those supplies. Entered directly rather than derived from a rate."
+    },
+    {
+      "id": "sgst",
+      "column": "State/UT tax",
+      "order": 9,
+      "type": "decimal",
+      "required": false,
+      "default": 0,
+      "pattern": "^-?(\\d{0,11})(\\.\\d{0,2})?$",
+      "round_to": 2,
+      "description": "State/UT tax on those supplies. Entered directly rather than derived from a rate."
+    },
+    {
+      "id": "cess",
+      "column": "Cess",
+      "order": 10,
+      "type": "decimal",
+      "required": false,
+      "default": 0,
+      "pattern": "^-?(\\d{0,11})(\\.\\d{0,2})?$",
+      "round_to": 2,
+      "description": "Cess on those supplies. Entered directly rather than derived from a rate."
+    }
+  ],
+  "rules": [],
+  "grouping": {},
+  "output": {
+    "record": {
+      "keys": [
+        {
+          "key": "omon",
+          "from": "derive:gstr1.original_period",
+          "description": "The MMYYYY period being amended."
+        },
+        {
+          "key": "oetin",
+          "from": "field:oetin"
+        },
+        {
+          "key": "etin",
+          "from": "field:etin"
+        },
+        {
+          "key": "suppval",
+          "from": "field:suppval"
+        },
+        {
+          "key": "igst",
+          "from": "field:igst"
+        },
+        {
+          "key": "cgst",
+          "from": "field:cgst"
+        },
+        {
+          "key": "sgst",
+          "from": "field:sgst"
+        },
+        {
+          "key": "cess",
+          "from": "field:cess"
+        }
+      ]
+    },
+    "member_from": {
+      "field": "nat_supp",
+      "map": {
+        "Liable to collect tax u/s 52(TCS)": "clttxa",
+        "Liable to pay tax u/s 9(5)": "paytxa"
+      }
+    },
+    "derivations": [
+      "gstr1.original_period"
+    ],
+    "derivation_notes": {
+      "gstr1.original_period": "omon = the MMYYYY period named by the financial year and the spelled-out original month."
+    }
+  },
+  "notes": [
+    {
+      "kind": "quirk",
+      "text": "ONE SHEET FEEDS TWO MEMBERS of the payload object: Nature of Supply routes each row to 'clttxa' (tax collected under section 52) or 'paytxa' (tax paid under section 9(5)). The column itself is never emitted \u2014 it only decides where the record goes. No other section in the return splits this way.",
+      "affects": [
+        "nat_supp",
+        "output"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "Tax amounts are entered directly rather than derived from a rate: there is no Rate column and no line items at all. The reference requires the amounts to agree in sign with the net value.",
+      "affects": [
+        "igst",
+        "cgst",
+        "sgst",
+        "cess"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "The operator name reaches the working file but is stripped before upload, exactly as the recipient name is for B2B and credit notes.",
+      "affects": [
+        "cname"
+      ]
+    }
+  ]
+}

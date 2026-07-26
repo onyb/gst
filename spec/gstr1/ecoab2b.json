@@ -1,0 +1,337 @@
+{
+  "$schema": "../section.schema.json",
+  "section": "ecomab2b",
+  "return": "gstr1",
+  "title": "Amended supplies under section 9(5) to registered persons - 15A",
+  "provenance": {
+    "offline_tool": "V3.2.4",
+    "excel_template": "GSTR1_Excel_Workbook_Template_V2.2.xlsx",
+    "csv_template": "Section_wise_CSV_files/GSTR1/ecoab2b.csv",
+    "verified_on": "2026-07-26"
+  },
+  "source": {
+    "excel": {
+      "sheet": "ecoab2b",
+      "header_row": 4,
+      "first_data_row": 5
+    },
+    "csv": {
+      "file": "ecoab2b.csv",
+      "header_row": 1
+    }
+  },
+  "fields": [
+    {
+      "id": "stin",
+      "column": "Supplier GSTIN/UIN",
+      "order": 0,
+      "type": "gstin",
+      "required": true,
+      "accepts": [
+        "gstin",
+        "uin"
+      ],
+      "description": "The supplier."
+    },
+    {
+      "id": "sname",
+      "column": "Supplier Name",
+      "order": 1,
+      "type": "text",
+      "required": false,
+      "pattern": "^[a-zA-Z0-9_&'\\-./,()?@!#%$~*;+= ]{1,99}$",
+      "max_length": 99,
+      "description": "Stripped before upload."
+    },
+    {
+      "id": "rtin",
+      "column": "Recipient GSTIN/UIN",
+      "order": 2,
+      "type": "gstin",
+      "required": true,
+      "accepts": [
+        "gstin",
+        "uin"
+      ],
+      "description": "The registered recipient."
+    },
+    {
+      "id": "cname",
+      "column": "Recipient Name",
+      "order": 3,
+      "type": "text",
+      "required": false,
+      "pattern": "^[a-zA-Z0-9_&'\\-./,()?@!#%$~*;+= ]{1,99}$",
+      "max_length": 99,
+      "description": "Stripped before upload."
+    },
+    {
+      "id": "oinum",
+      "column": "Original Document Number",
+      "order": 4,
+      "type": "text",
+      "required": true,
+      "pattern": "^[a-zA-Z0-9\\-/]{1,16}$",
+      "max_length": 16,
+      "constraints": [
+        "numeric_value_not_zero"
+      ],
+      "description": "Document number as originally reported."
+    },
+    {
+      "id": "oidt",
+      "column": "Original Document Date",
+      "order": 5,
+      "type": "date",
+      "required": true,
+      "constraints": [
+        "date_within_return_window"
+      ],
+      "transform": "date_normalize",
+      "description": "Document date as originally reported."
+    },
+    {
+      "id": "inum",
+      "column": "Revised Document Number",
+      "order": 6,
+      "type": "text",
+      "required": true,
+      "pattern": "^[a-zA-Z0-9\\-/]{1,16}$",
+      "max_length": 16,
+      "constraints": [
+        "numeric_value_not_zero"
+      ],
+      "description": "Corrected document number."
+    },
+    {
+      "id": "idt",
+      "column": "Revised Document Date",
+      "order": 7,
+      "type": "date",
+      "required": true,
+      "constraints": [
+        "date_within_return_window"
+      ],
+      "transform": "date_normalize",
+      "description": "Corrected document date."
+    },
+    {
+      "id": "val",
+      "column": "Value of supplies made",
+      "order": 8,
+      "type": "decimal",
+      "required": true,
+      "pattern": "^(\\d{0,13})(\\.\\d{0,2})?$",
+      "round_to": 2,
+      "description": "Corrected total value of the supply."
+    },
+    {
+      "id": "pos",
+      "column": "Place Of Supply",
+      "order": 9,
+      "type": "state_code",
+      "required": true,
+      "constraints": [
+        "pos_code_range"
+      ],
+      "transform": "state_code_prefix",
+      "description": "Place of supply as 'NN-Name'; only the numeric prefix is kept."
+    },
+    {
+      "id": "doc_typ",
+      "column": "Document type",
+      "order": 10,
+      "type": "text",
+      "required": true,
+      "description": "Nature of the document. Required, but unchecked."
+    },
+    {
+      "id": "rt",
+      "column": "Rate",
+      "order": 11,
+      "type": "decimal",
+      "required": true,
+      "enum_ref": "../masters/tax-rates.json#/item",
+      "description": "Combined tax rate for this line, in percent."
+    },
+    {
+      "id": "txval",
+      "column": "Taxable Value",
+      "order": 12,
+      "type": "decimal",
+      "required": true,
+      "pattern": "^(\\d{0,11})(\\.\\d{0,2})?$",
+      "round_to": 2,
+      "description": "Corrected taxable value at this rate."
+    },
+    {
+      "id": "csamt",
+      "column": "Cess Amount",
+      "order": 13,
+      "type": "decimal",
+      "required": false,
+      "default": 0,
+      "pattern": "^(\\d{0,11})(\\.\\d{0,2})?$",
+      "round_to": 2,
+      "description": "Cess on this line. Must be an explicit 0 when there is none \u2014 see the quirk note."
+    }
+  ],
+  "rules": [],
+  "grouping": {
+    "envelope_key": [
+      "stin",
+      "rtin"
+    ],
+    "invoice_key": [
+      "inum"
+    ],
+    "invoice_key_case_insensitive": true,
+    "item_key": [
+      "rt"
+    ],
+    "item_conflict": "last_wins",
+    "invoice_field_conflict": "error",
+    "agree_fields": [
+      "sname",
+      "cname",
+      "doc_typ"
+    ]
+  },
+  "output": {
+    "envelope": {
+      "keys": [
+        {
+          "key": "stin",
+          "from": "field:stin"
+        },
+        {
+          "key": "rtin",
+          "from": "field:rtin"
+        },
+        {
+          "key": "inv",
+          "from": "nested:invoice"
+        }
+      ]
+    },
+    "invoice": {
+      "keys": [
+        {
+          "key": "sply_ty",
+          "from": "derive:gstr1.supply_type",
+          "description": "'INTER' or 'INTRA', from the place of supply against the filer's own state."
+        },
+        {
+          "key": "oinum",
+          "from": "field:oinum"
+        },
+        {
+          "key": "oidt",
+          "from": "field:oidt"
+        },
+        {
+          "key": "inum",
+          "from": "field:inum"
+        },
+        {
+          "key": "idt",
+          "from": "field:idt"
+        },
+        {
+          "key": "val",
+          "from": "field:val"
+        },
+        {
+          "key": "pos",
+          "from": "field:pos"
+        },
+        {
+          "key": "itms",
+          "from": "nested:item"
+        },
+        {
+          "key": "flag",
+          "from": "literal:N",
+          "description": "Stamped on every e-commerce record; no column supplies it."
+        }
+      ]
+    },
+    "item": {
+      "keys": [
+        {
+          "key": "num",
+          "from": "derive:gstr1.item_num"
+        },
+        {
+          "key": "itm_det.txval",
+          "from": "field:txval"
+        },
+        {
+          "key": "itm_det.rt",
+          "from": "field:rt"
+        },
+        {
+          "key": "itm_det.iamt",
+          "from": "derive:gstr1.tax_split_by_pos",
+          "omit_when_empty": true
+        },
+        {
+          "key": "itm_det.camt",
+          "from": "derive:gstr1.tax_split_by_pos",
+          "omit_when_empty": true
+        },
+        {
+          "key": "itm_det.samt",
+          "from": "derive:gstr1.tax_split_by_pos",
+          "omit_when_empty": true
+        },
+        {
+          "key": "itm_det.csamt",
+          "from": "derive:gstr1.cess"
+        }
+      ]
+    },
+    "derivations": [
+      "gstr1.item_num",
+      "gstr1.supply_type",
+      "gstr1.tax_split_by_pos",
+      "gstr1.cess"
+    ],
+    "derivation_notes": {
+      "gstr1.item_num": "num = rt * 100 + 1.",
+      "gstr1.supply_type": "'INTRA' when the place of supply is the filer's own state and the filer is not an SEZ unit.",
+      "gstr1.tax_split_by_pos": "Intra-state: camt = samt = round(txval * rt * 0.005, 2). Inter-state: iamt = round(txval * rt * 0.01, 2).",
+      "gstr1.cess": "csamt = round(Cess Amount, 2), or 0 when blank."
+    }
+  },
+  "notes": [
+    {
+      "kind": "quirk",
+      "text": "A BLANK CESS AMOUNT IS REPORTED AS A MISSING HEADER COLUMN \u2014 the presence check reads the parsed ROW, and blank cells are omitted by the reader. Every row needs an explicit 0. This implementation defaults a blank to 0 instead.",
+      "affects": [
+        "csamt"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "Every record carries flag: \"N\", written unconditionally with no column behind it.",
+      "affects": [
+        "output"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "A SUPPLIER GSTIN EQUAL TO THE FILER'S OWN SILENTLY DROPS THE ROW, with a clean import report and no error anywhere. This implementation rejects it so the loss is visible.",
+      "affects": [
+        "stin"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "Here sply_ty LEADS the record and the original document number precedes the revised one. The unregistered-supplier counterpart reverses both. Verified against a captured file.",
+      "affects": [
+        "output.invoice"
+      ]
+    }
+  ]
+}

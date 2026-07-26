@@ -142,36 +142,76 @@
       "key": "supeco",
       "from": "object",
       "members": [
-        "clttx",
-        "paytx"
+        {
+          "key": "clttx",
+          "from": "section:supeco",
+          "member": "clttx"
+        },
+        {
+          "key": "paytx",
+          "from": "section:supeco",
+          "member": "paytx"
+        }
       ]
     },
     {
       "key": "supecoa",
       "from": "object",
       "members": [
-        "clttxa",
-        "paytxa"
+        {
+          "key": "clttxa",
+          "from": "section:supecoa",
+          "member": "clttxa"
+        },
+        {
+          "key": "paytxa",
+          "from": "section:supecoa",
+          "member": "paytxa"
+        }
       ]
     },
     {
       "key": "ecom",
       "from": "object",
       "members": [
-        "b2b",
-        "b2c",
-        "urp2b",
-        "urp2c"
+        {
+          "key": "b2b",
+          "from": "section:ecomb2b"
+        },
+        {
+          "key": "b2c",
+          "from": "section:ecomb2c"
+        },
+        {
+          "key": "urp2b",
+          "from": "section:ecomurp2b"
+        },
+        {
+          "key": "urp2c",
+          "from": "section:ecomurp2c"
+        }
       ]
     },
     {
       "key": "ecoma",
       "from": "object",
       "members": [
-        "b2ba",
-        "b2ca",
-        "urp2ba",
-        "urp2ca"
+        {
+          "key": "b2ba",
+          "from": "section:ecomab2b"
+        },
+        {
+          "key": "b2ca",
+          "from": "section:ecomab2c"
+        },
+        {
+          "key": "urp2ba",
+          "from": "section:ecomaurp2b"
+        },
+        {
+          "key": "urp2ca",
+          "from": "section:ecomaurp2c"
+        }
       ]
     },
     {
@@ -190,8 +230,14 @@
   },
   "hsn_from_bifurcation": {
     "members": [
-      "hsn_b2b",
-      "hsn_b2c"
+      {
+        "key": "hsn_b2b",
+        "from": "section:hsn(b2b)"
+      },
+      {
+        "key": "hsn_b2c",
+        "from": "section:hsn(b2c)"
+      }
     ]
   },
   "omit_empty_sections": true

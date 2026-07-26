@@ -356,6 +356,9 @@ pub enum Source {
     Field(String),
     Derive(String),
     Nested(Level),
+    /// A constant the reference writes with no column behind it — the
+    /// e-commerce sections stamp every record with `flag: "N"`.
+    Literal(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -370,6 +373,7 @@ impl<'de> Deserialize<'de> for Source {
         match s.split_once(':') {
             Some(("field", name)) => Ok(Source::Field(name.to_owned())),
             Some(("derive", name)) => Ok(Source::Derive(name.to_owned())),
+            Some(("literal", value)) => Ok(Source::Literal(value.to_owned())),
             Some(("nested", "invoice")) => Ok(Source::Nested(Level::Invoice)),
             Some(("nested", "item")) => Ok(Source::Nested(Level::Item)),
             _ => Err(serde::de::Error::custom(format!(
@@ -420,6 +424,19 @@ pub struct Output {
     pub derivations: Vec<String>,
     #[serde(default)]
     pub derivation_notes: std::collections::HashMap<String, String>,
+    /// Sections whose rows are split across several members of one payload
+    /// object — the e-commerce summary sends each row to `clttx` or `paytx`
+    /// depending on its nature of supply. The tag never appears in the payload.
+    pub member_from: Option<MemberFrom>,
+}
+
+/// How a row picks which member of its payload object it belongs to.
+#[derive(Debug, Clone, Deserialize)]
+pub struct MemberFrom {
+    /// Field whose value selects the member.
+    pub field: String,
+    /// Field value to member name.
+    pub map: std::collections::HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -551,6 +568,16 @@ embedded_section!(GSTR1_ATA, "gstr1/ata.json");
 embedded_section!(GSTR1_ATADJ, "gstr1/atadj.json");
 embedded_section!(GSTR1_ATADJA, "gstr1/atadja.json");
 embedded_section!(GSTR1_NIL, "gstr1/exemp.json");
+embedded_section!(GSTR1_SUPECO, "gstr1/eco.json");
+embedded_section!(GSTR1_SUPECOA, "gstr1/ecoa.json");
+embedded_section!(GSTR1_ECOM_B2B, "gstr1/ecob2b.json");
+embedded_section!(GSTR1_ECOM_B2C, "gstr1/ecob2c.json");
+embedded_section!(GSTR1_ECOM_URP2B, "gstr1/ecourp2b.json");
+embedded_section!(GSTR1_ECOM_URP2C, "gstr1/ecourp2c.json");
+embedded_section!(GSTR1_ECOMA_B2B, "gstr1/ecoab2b.json");
+embedded_section!(GSTR1_ECOMA_B2C, "gstr1/ecoab2c.json");
+embedded_section!(GSTR1_ECOMA_URP2B, "gstr1/ecoaurp2b.json");
+embedded_section!(GSTR1_ECOMA_URP2C, "gstr1/ecoaurp2c.json");
 embedded_section!(GSTR1_DOC_ISSUE, "gstr1/docs.json");
 embedded_section!(GSTR1_HSN_B2B, "gstr1/hsn-b2b.json");
 embedded_section!(GSTR1_HSN_B2C, "gstr1/hsn-b2c.json");
@@ -575,6 +602,16 @@ pub fn sections() -> Vec<&'static SectionSpec> {
         &GSTR1_ATADJ,
         &GSTR1_ATADJA,
         &GSTR1_NIL,
+        &GSTR1_SUPECO,
+        &GSTR1_SUPECOA,
+        &GSTR1_ECOM_B2B,
+        &GSTR1_ECOM_B2C,
+        &GSTR1_ECOM_URP2B,
+        &GSTR1_ECOM_URP2C,
+        &GSTR1_ECOMA_B2B,
+        &GSTR1_ECOMA_B2C,
+        &GSTR1_ECOMA_URP2B,
+        &GSTR1_ECOMA_URP2C,
         &GSTR1_DOC_ISSUE,
         &GSTR1_HSN_B2B,
         &GSTR1_HSN_B2C,
@@ -781,6 +818,7 @@ mod tests {
         assert!(section("cdnr").is_some());
         assert!(section("exp").is_some());
         assert!(section("at").is_some());
+        assert!(section("supeco").is_some());
         assert!(section("nonsense").is_none());
         assert_eq!(
             section_codes(),
@@ -802,6 +840,16 @@ mod tests {
                 "atadj",
                 "atadja",
                 "nil",
+                "supeco",
+                "supecoa",
+                "ecomb2b",
+                "ecomb2c",
+                "ecomurp2b",
+                "ecomurp2c",
+                "ecomab2b",
+                "ecomab2c",
+                "ecomaurp2b",
+                "ecomaurp2c",
                 "doc_issue",
                 "hsn(b2b)",
                 "hsn(b2c)"

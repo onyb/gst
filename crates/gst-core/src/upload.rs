@@ -12,6 +12,7 @@ use rust_decimal::Decimal;
 use serde::Deserialize;
 use std::sync::LazyLock;
 
+use crate::generate::Generated;
 use crate::payload::Json;
 use crate::spec::period_as_yyyymm;
 use crate::validate::FilingContext;
@@ -23,14 +24,25 @@ struct EnvelopeKey {
     #[serde(default)]
     wrapper: Option<String>,
     #[serde(default)]
-    members: Vec<String>,
+    members: Vec<EnvelopeMember>,
+}
+
+/// One member of a payload object such as `ecom` or `supeco`. Each names the
+/// section it draws from; `member` additionally selects a subset of that
+/// section's records, for the sheets that feed two members at once.
+#[derive(Debug, Clone, Deserialize)]
+struct EnvelopeMember {
+    key: String,
+    from: String,
+    #[serde(default)]
+    member: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 struct Wrapped {
     wrapper: Option<String>,
     #[serde(default)]
-    members: Vec<String>,
+    members: Vec<EnvelopeMember>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -104,7 +116,7 @@ fn period_string(ctx: &FilingContext) -> String {
 /// Sections the caller has nothing for are still emitted, empty, because the
 /// reference always writes the full key set.
 pub fn build(
-    sections: &HashMap<String, Vec<Json>>,
+    sections: &HashMap<String, Generated>,
     ctx: &FilingContext,
     turnover: Turnover,
 ) -> Json {
@@ -112,7 +124,32 @@ pub fn build(
     let bifurcated = period_as_yyyymm(&spec.hsn_bifurcation_start_period)
         .is_some_and(|start| ctx.period.as_yyyymm() >= start);
 
-    let take = |code: &str| -> Vec<Json> { sections.get(code).cloned().unwrap_or_default() };
+    let take = |code: &str| -> Vec<Json> {
+        sections
+            .get(code)
+            .map(|g| g.envelopes.clone())
+            .unwrap_or_default()
+    };
+    // A member draws from one section, optionally taking only the records that
+    // section tagged for it.
+    let take_member = |member: &EnvelopeMember| -> Vec<Json> {
+        let Some(code) = member.from.strip_prefix("section:") else {
+            panic!("envelope member `{}` names unknown source `{}`", member.key, member.from);
+        };
+        let Some(generated) = sections.get(code) else {
+            return Vec::new();
+        };
+        match &member.member {
+            None => generated.envelopes.clone(),
+            Some(tag) => generated
+                .envelopes
+                .iter()
+                .zip(generated.members.iter())
+                .filter(|(_, m)| m.as_deref() == Some(tag.as_str()))
+                .map(|(json, _)| json.clone())
+                .collect(),
+        }
+    };
 
     let mut out = Json::obj();
     for entry in &spec.keys {
@@ -134,9 +171,7 @@ pub fn build(
                 let mut hsn = Json::obj();
                 if bifurcated {
                     for member in &spec.hsn_from_bifurcation.members {
-                        // 'hsn_b2b' -> section 'hsn(b2b)'
-                        let code = member.replace("hsn_", "hsn(") + ")";
-                        hsn.insert_path(member, Json::Arr(take(&code)));
+                        hsn.insert_path(&member.key, Json::Arr(take_member(member)));
                     }
                 } else if let Some(wrapper) = &spec.hsn_before_bifurcation.wrapper {
                     hsn.insert_path(wrapper, Json::Arr(take("hsn")));
@@ -146,7 +181,7 @@ pub fn build(
             "object" => {
                 let mut obj = Json::obj();
                 for member in &entry.members {
-                    obj.insert_path(member, Json::Arr(Vec::new()));
+                    obj.insert_path(&member.key, Json::Arr(take_member(member)));
                 }
                 obj
             }
@@ -335,11 +370,12 @@ mod tests {
     fn hsn_changes_shape_at_the_bifurcation_period() {
         // The wrapper is only observable once the section has records, since an
         // empty hsn is dropped like any other empty section.
-        let row = || {
-            vec![Json::Obj(vec![(
+        let row = || Generated {
+            envelopes: vec![Json::Obj(vec![(
                 "hsn_sc".to_string(),
                 Json::Str("0101".into()),
-            )])]
+            )])],
+            ..Default::default()
         };
 
         // Before May 2025 a single `data` array, fed by the combined section.
@@ -376,10 +412,13 @@ mod tests {
         let mut sections = HashMap::new();
         sections.insert(
             "b2b".to_string(),
-            vec![Json::Obj(vec![(
-                "ctin".to_string(),
-                Json::Str("12GEOPS0823BBZH".into()),
-            )])],
+            Generated {
+                envelopes: vec![Json::Obj(vec![(
+                    "ctin".to_string(),
+                    Json::Str("12GEOPS0823BBZH".into()),
+                )])],
+                ..Default::default()
+            },
         );
         let json = build(&sections, &ctx(7, 2017), Turnover::default()).to_json();
         assert!(

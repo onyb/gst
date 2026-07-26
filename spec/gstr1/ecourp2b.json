@@ -1,0 +1,269 @@
+{
+  "$schema": "../section.schema.json",
+  "section": "ecomurp2b",
+  "return": "gstr1",
+  "title": "Supplies under section 9(5) by unregistered suppliers to registered persons - 15",
+  "provenance": {
+    "offline_tool": "V3.2.4",
+    "excel_template": "GSTR1_Excel_Workbook_Template_V2.2.xlsx",
+    "csv_template": "Section_wise_CSV_files/GSTR1/ecourp2b.csv",
+    "verified_on": "2026-07-26"
+  },
+  "source": {
+    "excel": {
+      "sheet": "ecourp2b",
+      "header_row": 4,
+      "first_data_row": 5
+    },
+    "csv": {
+      "file": "ecourp2b.csv",
+      "header_row": 1
+    }
+  },
+  "fields": [
+    {
+      "id": "rtin",
+      "column": "Recipient GSTIN/UIN",
+      "order": 0,
+      "type": "gstin",
+      "required": true,
+      "accepts": [
+        "gstin",
+        "uin"
+      ],
+      "description": "The registered recipient."
+    },
+    {
+      "id": "cname",
+      "column": "Recipient Name",
+      "order": 1,
+      "type": "text",
+      "required": false,
+      "pattern": "^[a-zA-Z0-9_&'\\-./,()?@!#%$~*;+= ]{1,99}$",
+      "max_length": 99,
+      "description": "Recipient's trade name. Stripped before upload."
+    },
+    {
+      "id": "inum",
+      "column": "Document Number",
+      "order": 2,
+      "type": "text",
+      "required": true,
+      "pattern": "^[a-zA-Z0-9\\-/]{1,16}$",
+      "max_length": 16,
+      "constraints": [
+        "numeric_value_not_zero"
+      ],
+      "description": "Document number."
+    },
+    {
+      "id": "idt",
+      "column": "Document Date",
+      "order": 3,
+      "type": "date",
+      "required": true,
+      "constraints": [
+        "date_within_return_window"
+      ],
+      "transform": "date_normalize",
+      "description": "Document date."
+    },
+    {
+      "id": "val",
+      "column": "Value of supplies made",
+      "order": 4,
+      "type": "decimal",
+      "required": true,
+      "pattern": "^(\\d{0,13})(\\.\\d{0,2})?$",
+      "round_to": 2,
+      "description": "Total value of the supply, including tax."
+    },
+    {
+      "id": "pos",
+      "column": "Place Of Supply",
+      "order": 5,
+      "type": "state_code",
+      "required": true,
+      "constraints": [
+        "pos_code_range"
+      ],
+      "transform": "state_code_prefix",
+      "description": "Place of supply as 'NN-Name'; only the numeric prefix is kept. Decides the tax split."
+    },
+    {
+      "id": "doc_typ",
+      "column": "Document type",
+      "order": 6,
+      "type": "text",
+      "required": true,
+      "description": "Nature of the document. Required, but the reference checks nothing about its value."
+    },
+    {
+      "id": "rt",
+      "column": "Rate",
+      "order": 7,
+      "type": "decimal",
+      "required": true,
+      "enum_ref": "../masters/tax-rates.json#/item",
+      "description": "Combined tax rate for this line, in percent."
+    },
+    {
+      "id": "txval",
+      "column": "Taxable Value",
+      "order": 8,
+      "type": "decimal",
+      "required": true,
+      "pattern": "^(\\d{0,11})(\\.\\d{0,2})?$",
+      "round_to": 2,
+      "description": "Taxable value at this rate, excluding tax."
+    },
+    {
+      "id": "csamt",
+      "column": "Cess Amount",
+      "order": 9,
+      "type": "decimal",
+      "required": false,
+      "default": 0,
+      "pattern": "^(\\d{0,11})(\\.\\d{0,2})?$",
+      "round_to": 2,
+      "description": "Cess on this line. Must be an explicit 0 when there is none \u2014 see the quirk note."
+    }
+  ],
+  "rules": [],
+  "grouping": {
+    "envelope_key": [
+      "rtin"
+    ],
+    "invoice_key": [
+      "inum"
+    ],
+    "invoice_key_case_insensitive": true,
+    "item_key": [
+      "rt"
+    ],
+    "item_conflict": "last_wins",
+    "invoice_field_conflict": "error",
+    "agree_fields": [
+      "cname",
+      "doc_typ"
+    ]
+  },
+  "output": {
+    "envelope": {
+      "keys": [
+        {
+          "key": "rtin",
+          "from": "field:rtin"
+        },
+        {
+          "key": "inv",
+          "from": "nested:invoice"
+        }
+      ]
+    },
+    "invoice": {
+      "keys": [
+        {
+          "key": "sply_ty",
+          "from": "derive:gstr1.supply_type",
+          "description": "'INTER' or 'INTRA', decided by the place of supply against the filer's own state."
+        },
+        {
+          "key": "inum",
+          "from": "field:inum"
+        },
+        {
+          "key": "idt",
+          "from": "field:idt"
+        },
+        {
+          "key": "val",
+          "from": "field:val"
+        },
+        {
+          "key": "pos",
+          "from": "field:pos"
+        },
+        {
+          "key": "itms",
+          "from": "nested:item"
+        },
+        {
+          "key": "flag",
+          "from": "literal:N",
+          "description": "Stamped on every e-commerce record; no column supplies it."
+        }
+      ]
+    },
+    "item": {
+      "keys": [
+        {
+          "key": "num",
+          "from": "derive:gstr1.item_num"
+        },
+        {
+          "key": "itm_det.txval",
+          "from": "field:txval"
+        },
+        {
+          "key": "itm_det.rt",
+          "from": "field:rt"
+        },
+        {
+          "key": "itm_det.iamt",
+          "from": "derive:gstr1.tax_split_by_pos",
+          "omit_when_empty": true
+        },
+        {
+          "key": "itm_det.camt",
+          "from": "derive:gstr1.tax_split_by_pos",
+          "omit_when_empty": true
+        },
+        {
+          "key": "itm_det.samt",
+          "from": "derive:gstr1.tax_split_by_pos",
+          "omit_when_empty": true
+        },
+        {
+          "key": "itm_det.csamt",
+          "from": "derive:gstr1.cess"
+        }
+      ]
+    },
+    "derivations": [
+      "gstr1.item_num",
+      "gstr1.supply_type",
+      "gstr1.tax_split_by_pos",
+      "gstr1.cess"
+    ],
+    "derivation_notes": {
+      "gstr1.item_num": "num = rt * 100 + 1.",
+      "gstr1.supply_type": "'INTRA' when the place of supply is the filer's own state and the filer is not an SEZ unit.",
+      "gstr1.tax_split_by_pos": "Intra-state: camt = samt = round(txval * rt * 0.005, 2). Inter-state: iamt = round(txval * rt * 0.01, 2).",
+      "gstr1.cess": "csamt = round(Cess Amount, 2), or 0 when blank."
+    }
+  },
+  "notes": [
+    {
+      "kind": "quirk",
+      "text": "A BLANK CESS AMOUNT IS REPORTED AS A MISSING HEADER COLUMN. The reference checks each column's presence against the parsed ROW rather than the header row, and the spreadsheet reader omits blank cells \u2014 so an empty cess reads as an absent column, the row is rejected, and the error names the wrong problem entirely. Every row must carry an explicit 0. This implementation defaults a blank to 0, producing the same payload the reference gives an explicit 0.",
+      "affects": [
+        "csamt"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "Every record carries flag: \"N\". No column supplies it, the reference writes it unconditionally, and no other section in the return emits it. Verified against a captured file.",
+      "affects": [
+        "output"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "There is no supplier column at all: the supplier is unregistered, so the operator reports only the recipient. The payload envelope therefore carries rtin alone.",
+      "affects": [
+        "output.envelope"
+      ]
+    }
+  ]
+}
