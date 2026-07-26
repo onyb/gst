@@ -502,6 +502,34 @@ pub fn tax_split_by_pos(record: &Record, ctx: &FilingContext) -> TaxSplit {
     }
 }
 
+/// Tax for a note issued to an unregistered person.
+///
+/// Always inter-state: the reference has no central/state branch for these at
+/// all. An export without payment of tax (`EXPWOP`) zeroes both the integrated
+/// tax and the cess.
+pub fn tax_split_unregistered(record: &Record, _ctx: &FilingContext) -> TaxSplit {
+    let without_payment = record.text("typ") == "EXPWOP";
+    let cess = if without_payment {
+        Decimal::ZERO
+    } else {
+        round2(record.number("csamt").unwrap_or_default())
+    };
+    let iamt = if without_payment {
+        Decimal::ZERO
+    } else {
+        let txval = record.number("txval").unwrap_or_default();
+        let rate = record.number("rt").unwrap_or_default();
+        let factor = record.number("diff_percent").unwrap_or(Decimal::ONE);
+        round2(txval * rate * FULL_RATE * factor)
+    };
+    TaxSplit {
+        iamt: Some(iamt),
+        camt: None,
+        samt: None,
+        csamt: cess,
+    }
+}
+
 /// Money rounds to two places, away from zero at the midpoint.
 fn round2(value: Decimal) -> Decimal {
     value.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero)
@@ -556,11 +584,11 @@ fn derive(
             }
             .to_owned(),
         ),
-        "gstr1.tax_split" | "gstr1.tax_split_by_pos" => {
-            let split = if name == "gstr1.tax_split_by_pos" {
-                tax_split_by_pos(record, ctx)
-            } else {
-                tax_split(record, ctx)
+        "gstr1.tax_split" | "gstr1.tax_split_by_pos" | "gstr1.tax_split_unregistered" => {
+            let split = match name {
+                "gstr1.tax_split_by_pos" => tax_split_by_pos(record, ctx),
+                "gstr1.tax_split_unregistered" => tax_split_unregistered(record, ctx),
+                _ => tax_split(record, ctx),
             };
             let amount = match leaf_key {
                 "iamt" => split.iamt,
@@ -609,6 +637,7 @@ pub fn unimplemented_derivations(spec: &SectionSpec) -> Vec<&str> {
         "gstr1.original_period",
         "gstr1.tax_split",
         "gstr1.tax_split_by_pos",
+        "gstr1.tax_split_unregistered",
         "gstr1.supply_type",
         "gstr1.cess",
     ];

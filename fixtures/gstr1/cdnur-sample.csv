@@ -1,0 +1,5 @@
+UR Type,Note Number,Note Date,Note Type,Place Of Supply,Note Value,Applicable % of Tax Rate,Rate,Taxable Value,Cess Amount
+B2CL,UN-001,14-Jul-17,C,37-Andhra Pradesh,295000,,18,250000,
+B2CL,UN-001,14-Jul-17,C,37-Andhra Pradesh,295000,,5,20000,500
+EXPWP,UN-002,15-Jul-17,C,,59000,,18,50000,
+EXPWOP,UN-003,16-Jul-17,D,,50000,,18,50000,750
