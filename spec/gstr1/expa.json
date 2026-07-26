@@ -1,0 +1,357 @@
+{
+  "$schema": "../section.schema.json",
+  "section": "expa",
+  "return": "gstr1",
+  "title": "Amended Exports Invoices - 9A",
+  "provenance": {
+    "offline_tool": "V3.2.4",
+    "excel_template": "GSTR1_Excel_Workbook_Template_V2.2.xlsx",
+    "csv_template": "Section_wise_CSV_files/GSTR1/expa.csv",
+    "verified_on": "2026-07-26"
+  },
+  "source": {
+    "excel": {
+      "sheet": "expa",
+      "header_row": 4,
+      "first_data_row": 5
+    },
+    "csv": {
+      "file": "expa.csv",
+      "header_row": 1
+    }
+  },
+  "fields": [
+    {
+      "id": "exp_typ",
+      "column": "Export Type",
+      "order": 0,
+      "type": "text",
+      "required": true,
+      "enum": [
+        "WPAY",
+        "WOPAY"
+      ],
+      "description": "Whether the export was made with or without payment of integrated tax."
+    },
+    {
+      "id": "oinum",
+      "column": "Original Invoice Number",
+      "order": 1,
+      "type": "text",
+      "required": true,
+      "pattern": "^[a-zA-Z0-9\\-/]{1,16}$",
+      "max_length": 16,
+      "constraints": [
+        "numeric_value_not_zero"
+      ],
+      "description": "Invoice number as originally reported. Identifies which already-filed export this row amends."
+    },
+    {
+      "id": "oidt",
+      "column": "Original Invoice date",
+      "order": 2,
+      "type": "date",
+      "required": true,
+      "constraints": [
+        "date_within_return_window"
+      ],
+      "transform": "date_normalize",
+      "description": "Invoice date as originally reported."
+    },
+    {
+      "id": "inum",
+      "column": "Revised Invoice Number",
+      "order": 3,
+      "type": "text",
+      "required": true,
+      "pattern": "^[a-zA-Z0-9\\-/]{1,16}$",
+      "max_length": 16,
+      "constraints": [
+        "numeric_value_not_zero"
+      ],
+      "description": "Corrected invoice number."
+    },
+    {
+      "id": "idt",
+      "column": "Revised Invoice date",
+      "order": 4,
+      "type": "date",
+      "required": true,
+      "constraints": [
+        "date_within_return_window"
+      ],
+      "transform": "date_normalize",
+      "description": "Corrected invoice date."
+    },
+    {
+      "id": "val",
+      "column": "Invoice Value",
+      "order": 5,
+      "type": "decimal",
+      "required": true,
+      "pattern": "^(\\d{0,13})(\\.\\d{0,2})?$",
+      "description": "Corrected total invoice value. Non-negative."
+    },
+    {
+      "id": "sbpcode",
+      "column": "Port Code",
+      "order": 6,
+      "type": "text",
+      "required": false,
+      "pattern": "^[a-zA-Z0-9]{1,6}$",
+      "max_length": 6,
+      "description": "Port of export. Optional, and not validated against any list of real ports."
+    },
+    {
+      "id": "sbnum",
+      "column": "Shipping Bill Number",
+      "order": 7,
+      "type": "text",
+      "required": false,
+      "pattern": "^[0-9]{3,7}$",
+      "description": "Shipping bill number: three to seven digits. A common reason to amend an export is that the shipping bill only became known later."
+    },
+    {
+      "id": "sbdt",
+      "column": "Shipping Bill Date",
+      "order": 8,
+      "type": "date",
+      "required": false,
+      "constraints": [
+        "date_within_return_window"
+      ],
+      "transform": "date_normalize",
+      "description": "Shipping bill date."
+    },
+    {
+      "id": "rt",
+      "column": "Rate",
+      "order": 9,
+      "type": "decimal",
+      "required": true,
+      "enum_ref": "../masters/tax-rates.json#/item",
+      "description": "Corrected tax rate for this line, in percent."
+    },
+    {
+      "id": "txval",
+      "column": "Taxable Value",
+      "order": 10,
+      "type": "decimal",
+      "required": true,
+      "pattern": "^(\\d{0,11})(\\.\\d{0,2})?$",
+      "description": "Corrected taxable value at this rate, excluding tax."
+    },
+    {
+      "id": "csamt",
+      "column": "Cess Amount",
+      "order": 11,
+      "type": "decimal",
+      "required": false,
+      "default": 0,
+      "pattern": "^(\\d{0,11})(\\.\\d{0,2})?$",
+      "description": "Corrected cess on this line. Blank is treated as 0, and forced to 0 for WOPAY."
+    }
+  ],
+  "rules": [
+    {
+      "id": "expa.shipping_bill_date_needs_number",
+      "description": "Shipping bill details are all-or-nothing: the reference makes each mandatory the moment the other is present.",
+      "when": {
+        "field": "sbdt",
+        "empty": false
+      },
+      "assert": {
+        "field": "sbnum",
+        "empty": false
+      },
+      "message": "Shipping Bill Number is required once a Shipping Bill Date is given."
+    },
+    {
+      "id": "expa.shipping_bill_number_needs_date",
+      "description": "The mirror of the rule above.",
+      "when": {
+        "field": "sbnum",
+        "empty": false
+      },
+      "assert": {
+        "field": "sbdt",
+        "empty": false
+      },
+      "message": "Shipping Bill Date is required once a Shipping Bill Number is given."
+    }
+  ],
+  "grouping": {
+    "envelope_key": [
+      "exp_typ"
+    ],
+    "invoice_key": [
+      "inum"
+    ],
+    "invoice_key_case_insensitive": true,
+    "item_key": [
+      "rt"
+    ],
+    "item_conflict": "last_wins",
+    "invoice_field_conflict": "error"
+  },
+  "output": {
+    "envelope": {
+      "keys": [
+        {
+          "key": "exp_typ",
+          "from": "field:exp_typ",
+          "description": "One envelope per export type."
+        },
+        {
+          "key": "inv",
+          "from": "nested:invoice"
+        }
+      ]
+    },
+    "invoice": {
+      "keys": [
+        {
+          "key": "oinum",
+          "from": "field:oinum"
+        },
+        {
+          "key": "oidt",
+          "from": "field:oidt",
+          "description": "Normalized to DD-MM-YYYY."
+        },
+        {
+          "key": "inum",
+          "from": "field:inum"
+        },
+        {
+          "key": "idt",
+          "from": "field:idt",
+          "description": "Normalized to DD-MM-YYYY."
+        },
+        {
+          "key": "val",
+          "from": "field:val"
+        },
+        {
+          "key": "sbpcode",
+          "from": "field:sbpcode",
+          "omit_when_empty": true
+        },
+        {
+          "key": "sbnum",
+          "from": "field:sbnum",
+          "omit_when_empty": true
+        },
+        {
+          "key": "sbdt",
+          "from": "field:sbdt",
+          "omit_when_empty": true,
+          "description": "Normalized to DD-MM-YYYY."
+        },
+        {
+          "key": "itms",
+          "from": "nested:item"
+        }
+      ]
+    },
+    "item": {
+      "keys": [
+        {
+          "key": "txval",
+          "from": "field:txval"
+        },
+        {
+          "key": "rt",
+          "from": "field:rt"
+        },
+        {
+          "key": "iamt",
+          "from": "derive:gstr1.tax_export",
+          "description": "Integrated tax. Zero for an export without payment of tax."
+        },
+        {
+          "key": "csamt",
+          "from": "derive:gstr1.tax_export",
+          "description": "Cess. Also zeroed for an export without payment of tax."
+        }
+      ]
+    },
+    "derivations": [
+      "gstr1.tax_export"
+    ],
+    "derivation_notes": {
+      "gstr1.tax_export": "Exports are always inter-static: iamt = round(txval * rt * 0.01, 2), and there is no central/state branch at all. An export WITHOUT payment of tax (WOPAY) zeroes both the integrated tax and the cess, whatever the rate says. csamt = round(Cess Amount, 2) otherwise, or 0 when blank."
+    }
+  },
+  "notes": [
+    {
+      "kind": "quirk",
+      "text": "Line items here are BARE: no `num` and no `itm_det` wrapper, so the rate, taxable value and tax sit directly on the item object. Only the amended B2C(Small) section shares that shape, and it has no iamt.",
+      "affects": [
+        "output.item"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "The payload groups by EXPORT TYPE, not by counterparty or place of supply \u2014 one envelope for WPAY and one for WOPAY, each holding its invoices. There is no recipient at all: exports are to persons outside India.",
+      "affects": [
+        "exp_typ",
+        "output.envelope"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "An export WITHOUT payment of tax (WOPAY) zeroes both the integrated tax and the cess regardless of the rate entered, the same way SEZ-without-payment does in the B2B sections. The rate itself is still required and still emitted.",
+      "affects": [
+        "exp_typ",
+        "rt"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "Shipping bill details are all-or-nothing but the pair as a whole is OPTIONAL: an exporter may file before the shipping bill exists and supply it in a later amendment. The reference switches between two validation branches on whether either field is present.",
+      "affects": [
+        "sbnum",
+        "sbdt"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "Port Code is optional and, unusually, permits any alphanumeric string of up to six characters \u2014 it is not checked against a list of real ports.",
+      "affects": [
+        "sbpcode"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "The template has no 'Applicable % of Tax Rate' column, yet the reference's validation writes a default of 100 into the row before mapping it, which makes the key exist and sets diff_percent to 1. Since only 0.65 survives into the upload file, the effect is invisible \u2014 no such key is ever emitted. No field is declared here for that reason.",
+      "affects": [
+        "output.invoice"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "Shipping Bill Number is digits only, three to seven of them, so it is emitted as a string but constrained like a number. The reference compares it both as a string and via parseInt when matching rows, which papers over any leading-zero difference.",
+      "affects": [
+        "sbnum"
+      ]
+    },
+    {
+      "kind": "open_question",
+      "text": "The reference groups rows into one amendment when EITHER the revised or the original invoice number matches, then rejects the group on any other disagreement. Grouping here keys on the revised number alone. Same unresolved question as the other amendment sections.",
+      "affects": [
+        "oinum",
+        "inum"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "Nothing requires the revised invoice to postdate the original, nor the shipping bill date to follow the invoice date \u2014 the routine that looks like it enforces the latter returns before checking anything.",
+      "affects": [
+        "oidt",
+        "idt",
+        "sbdt"
+      ]
+    }
+  ]
+}

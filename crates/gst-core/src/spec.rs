@@ -523,6 +523,8 @@ embedded_section!(GSTR1_CDNR, "gstr1/cdnr.json");
 embedded_section!(GSTR1_CDNRA, "gstr1/cdnra.json");
 embedded_section!(GSTR1_CDNUR, "gstr1/cdnur.json");
 embedded_section!(GSTR1_CDNURA, "gstr1/cdnura.json");
+embedded_section!(GSTR1_EXP, "gstr1/exp.json");
+embedded_section!(GSTR1_EXPA, "gstr1/expa.json");
 embedded_section!(GSTR1_DOC_ISSUE, "gstr1/docs.json");
 embedded_section!(GSTR1_HSN_B2B, "gstr1/hsn-b2b.json");
 embedded_section!(GSTR1_HSN_B2C, "gstr1/hsn-b2c.json");
@@ -540,6 +542,8 @@ pub fn sections() -> Vec<&'static SectionSpec> {
         &GSTR1_CDNRA,
         &GSTR1_CDNUR,
         &GSTR1_CDNURA,
+        &GSTR1_EXP,
+        &GSTR1_EXPA,
         &GSTR1_DOC_ISSUE,
         &GSTR1_HSN_B2B,
         &GSTR1_HSN_B2C,
@@ -744,8 +748,9 @@ mod tests {
         assert!(section("b2b").is_some());
         assert!(section("b2ba").is_some());
         assert!(section("cdnr").is_some());
-        // Still unwritten, so a good stand-in for an unknown code.
-        assert!(section("exp").is_none());
+        assert!(section("exp").is_some());
+        // Advances are still unwritten, so a good stand-in for an unknown code.
+        assert!(section("at").is_none());
         assert!(section("nonsense").is_none());
         assert_eq!(
             section_codes(),
@@ -760,6 +765,8 @@ mod tests {
                 "cdnra",
                 "cdnur",
                 "cdnura",
+                "exp",
+                "expa",
                 "doc_issue",
                 "hsn(b2b)",
                 "hsn(b2c)"

@@ -75,3 +75,6 @@ From the second capture, which added the import and mapping steps:
 - **The workbook's dates have to be text**, not date-formatted cells — see
   `spec/README.md`. This surfaced because step 1 rejected every row of a workbook
   the seeding method had never fed through the importer.
+- The tool's own mapping of `exp` and `expa` matches this implementation exactly:
+  grouping by export type, the bare line-item shape with no `num` and no
+  `itm_det`, and `WOPAY` zeroing both the tax and the cess.

@@ -1,0 +1,4 @@
+Export Type,Original Invoice Number,Original Invoice date,Revised Invoice Number,Revised Invoice date,Invoice Value,Port Code,Shipping Bill Number,Shipping Bill Date,Rate,Taxable Value,Cess Amount
+WPAY,EX-101,14-Jul-17,EX-101-R,05-Sep-17,295000,INMAA1,7896542,08-Sep-17,18,250000,
+WPAY,EX-101,14-Jul-17,EX-101-R,05-Sep-17,295000,INMAA1,7896542,08-Sep-17,5,20000,500
+WOPAY,EX-102,20-Jul-17,EX-102,06-Sep-17,180000,INNSA1,,,18,180000,750

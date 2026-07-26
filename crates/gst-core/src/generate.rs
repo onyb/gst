@@ -556,6 +556,32 @@ pub fn cess_unguarded(record: &Record) -> Json {
     Json::Num(round2(record.number("csamt").unwrap_or_default()))
 }
 
+/// Tax on an export invoice.
+///
+/// Always inter-state — a supply out of India has no central/state branch to
+/// take. An export made *without* payment of tax (`WOPAY`) zeroes both the
+/// integrated tax and the cess whatever rate the row carries, the same way a
+/// note to an unregistered person does.
+pub fn tax_export(record: &Record, _ctx: &FilingContext) -> TaxSplit {
+    let without_payment = record.text("exp_typ") == "WOPAY";
+    if without_payment {
+        return TaxSplit {
+            iamt: Some(Decimal::ZERO),
+            camt: None,
+            samt: None,
+            csamt: Decimal::ZERO,
+        };
+    }
+    let txval = record.number("txval").unwrap_or_default();
+    let rate = record.number("rt").unwrap_or_default();
+    TaxSplit {
+        iamt: Some(round2(txval * rate * FULL_RATE)),
+        camt: None,
+        samt: None,
+        csamt: round2(record.number("csamt").unwrap_or_default()),
+    }
+}
+
 /// Money rounds to two places, away from zero at the midpoint.
 fn round2(value: Decimal) -> Decimal {
     value.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero)
@@ -647,9 +673,13 @@ fn derive(
             }
             .to_owned(),
         ),
-        "gstr1.tax_split" | "gstr1.tax_split_by_pos" | "gstr1.tax_split_unregistered" => {
+        "gstr1.tax_split"
+        | "gstr1.tax_split_by_pos"
+        | "gstr1.tax_split_unregistered"
+        | "gstr1.tax_export" => {
             let split = match name {
                 "gstr1.tax_split_by_pos" => tax_split_by_pos(record, ctx),
+                "gstr1.tax_export" => tax_export(record, ctx),
                 "gstr1.tax_split_unregistered" => tax_split_unregistered(record, ctx),
                 _ => tax_split(record, ctx),
             };
@@ -705,6 +735,7 @@ pub fn unimplemented_derivations(spec: &SectionSpec) -> Vec<&str> {
         "gstr1.tax_split",
         "gstr1.tax_split_by_pos",
         "gstr1.tax_split_unregistered",
+        "gstr1.tax_export",
         "gstr1.supply_type",
         "gstr1.cess",
         "gstr1.cess_unguarded",
