@@ -391,10 +391,32 @@ impl SectionSpec {
     }
 }
 
-pub static GSTR1_B2B: LazyLock<SectionSpec> = LazyLock::new(|| {
-    serde_json::from_str(include_str!("../../../spec/gstr1/b2b.json"))
-        .expect("embedded spec gstr1/b2b.json is invalid")
-});
+macro_rules! embedded_section {
+    ($name:ident, $file:literal) => {
+        pub static $name: LazyLock<SectionSpec> = LazyLock::new(|| {
+            serde_json::from_str(include_str!(concat!("../../../spec/", $file)))
+                .unwrap_or_else(|e| panic!("embedded spec {} is invalid: {e}", $file))
+        });
+    };
+}
+
+embedded_section!(GSTR1_B2B, "gstr1/b2b.json");
+embedded_section!(GSTR1_B2BA, "gstr1/b2ba.json");
+
+/// Every section the engine knows, in the order a return reports them.
+pub fn sections() -> Vec<&'static SectionSpec> {
+    vec![&GSTR1_B2B, &GSTR1_B2BA]
+}
+
+/// Look up a section by its code, e.g. `b2b`.
+pub fn section(code: &str) -> Option<&'static SectionSpec> {
+    sections().into_iter().find(|s| s.section == code)
+}
+
+/// Section codes, for listing what is available in a usage message.
+pub fn section_codes() -> Vec<&'static str> {
+    sections().into_iter().map(|s| s.section.as_str()).collect()
+}
 
 #[cfg(test)]
 mod tests {
@@ -458,6 +480,91 @@ mod tests {
         // Guards against the section being treated as settled while the
         // payload shape is still partly unconfirmed.
         assert_eq!(GSTR1_B2B.unverified_keys(), ["etin"]);
+    }
+
+    #[test]
+    fn b2ba_spec_loads_with_template_column_order() {
+        let spec = section("b2ba").expect("b2ba is registered");
+        assert_eq!(spec.return_type, "gstr1");
+        assert_eq!(
+            spec.columns(),
+            [
+                "GSTIN/UIN of Recipient",
+                "Receiver Name",
+                "Original Invoice Number",
+                "Original Invoice date",
+                "Revised Invoice Number",
+                "Revised Invoice date",
+                "Invoice Value",
+                "Place Of Supply",
+                "Reverse Charge",
+                "Applicable % of Tax Rate",
+                "Invoice Type",
+                "E-Commerce GSTIN",
+                "Rate",
+                "Taxable Value",
+                "Cess Amount",
+            ]
+        );
+        // The amendment keys the original invoice it corrects.
+        assert!(spec.field("oinum").is_some());
+        assert!(spec.field("oidt").is_some());
+    }
+
+    #[test]
+    fn every_registered_section_is_internally_consistent() {
+        for spec in sections() {
+            // Column orders must be a gapless 0..n, or an importer matching by
+            // position would silently read the wrong cells.
+            let mut orders: Vec<usize> = spec.fields.iter().map(|f| f.order).collect();
+            orders.sort_unstable();
+            assert_eq!(
+                orders,
+                (0..spec.fields.len()).collect::<Vec<_>>(),
+                "{} has gapped or duplicated column orders",
+                spec.section
+            );
+
+            // Field ids unique.
+            let mut ids: Vec<&str> = spec.fields.iter().map(|f| f.id.as_str()).collect();
+            ids.sort_unstable();
+            let count = ids.len();
+            ids.dedup();
+            assert_eq!(ids.len(), count, "{} has duplicate field ids", spec.section);
+
+            // Rules and grouping may only name fields that exist.
+            for key in spec
+                .grouping
+                .envelope_key
+                .iter()
+                .chain(&spec.grouping.invoice_key)
+                .chain(&spec.grouping.item_key)
+            {
+                assert!(
+                    spec.field(key).is_some(),
+                    "{} groups on unknown field '{key}'",
+                    spec.section
+                );
+            }
+
+            // Rule ids are namespaced by their own section.
+            for rule in &spec.rules {
+                assert!(
+                    rule.id.starts_with(&format!("{}.", spec.section)),
+                    "rule '{}' is not namespaced to section '{}'",
+                    rule.id,
+                    spec.section
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn section_lookup_rejects_unknown_codes() {
+        assert!(section("b2b").is_some());
+        assert!(section("b2ba").is_some());
+        assert!(section("cdnr").is_none());
+        assert_eq!(section_codes(), ["b2b", "b2ba"]);
     }
 
     #[test]

@@ -1,0 +1,6 @@
+GSTIN/UIN of Recipient,Receiver Name,Original Invoice Number,Original Invoice date,Revised Invoice Number,Revised Invoice date,Invoice Value,Place Of Supply,Reverse Charge,Applicable % of Tax Rate,Invoice Type,E-Commerce GSTIN,Rate,Taxable Value,Cess Amount
+12GEOPS0823BBZH,Acme Traders,INV-001,14-Jul-17,INV-001-R,05-Sep-17,118000,27-Maharashtra,N,,Regular B2B,,18,100000,
+12GEOPS0823BBZH,Acme Traders,INV-002,15-Jul-17,INV-002,06-Sep-17,80000,37-Andhra Pradesh,N,,Regular B2B,,18,50000,
+12GEOPS0823BBZH,Acme Traders,INV-002,15-Jul-17,INV-002,06-Sep-17,80000,37-Andhra Pradesh,N,,Regular B2B,,5,20000,
+29AAGCB7383J1Z4,Bharat Supplies,INV-003,20-Jul-17,INV-003-R,07-Sep-17,24100,29-Karnataka,N,,Deemed Exp,,18,20000,500
+29AAGCB7383J1Z4,Bharat Supplies,INV-004,21-Jul-17,INV-004-R,08-Sep-17,111700,29-Karnataka,N,65,Regular B2B,,18,100000,

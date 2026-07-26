@@ -5,7 +5,7 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use gst_core::date::ReturnPeriod;
 use gst_core::generate::generate;
 use gst_core::import;
-use gst_core::spec::{GSTR1_B2B, SectionSpec, Severity};
+use gst_core::spec::{self, SectionSpec, Severity};
 use gst_core::validate::{FilingContext, Finding, validate};
 
 /// Prepare Indian GST returns offline: validate Excel/CSV workbooks and
@@ -65,7 +65,7 @@ struct Filing {
     /// Treat the filer as an SEZ unit, which makes every supply inter-state
     #[arg(long)]
     sez: bool,
-    /// Section to read. Auto-detection arrives with more sections.
+    /// Section to read. Auto-detection from workbook shape is not built yet.
     #[arg(long, default_value = "b2b")]
     section: String,
 }
@@ -114,14 +114,13 @@ fn prepare(filing: &Filing) -> Result<(FilingContext, &'static SectionSpec), Str
     let period = ReturnPeriod::parse(&filing.period)
         .ok_or_else(|| format!("--period '{}' is not MMYYYY, e.g. 072017", filing.period))?;
 
-    let spec: &SectionSpec = match filing.section.as_str() {
-        "b2b" => &GSTR1_B2B,
-        other => {
-            return Err(format!(
-                "--section '{other}' is not available yet; only 'b2b' is specified so far"
-            ));
-        }
-    };
+    let spec = spec::section(&filing.section).ok_or_else(|| {
+        format!(
+            "--section '{}' is not available yet; specified so far: {}",
+            filing.section,
+            spec::section_codes().join(", ")
+        )
+    })?;
 
     if !gst_core::gstin::checksum_valid(&filing.gstin) {
         return Err(format!(
