@@ -200,6 +200,11 @@ pub enum Predicate {
         field: String,
         empty: bool,
     },
+    /// Field-to-field numeric comparison: this field must be >= another.
+    GteField {
+        field: String,
+        other: String,
+    },
     All(Vec<Predicate>),
     Any(Vec<Predicate>),
     Not(Box<Predicate>),
@@ -215,6 +220,7 @@ pub struct RawPredicate {
     #[serde(rename = "in")]
     in_: Option<Vec<SpecValue>>,
     empty: Option<bool>,
+    gte_field: Option<String>,
     all: Option<Vec<RawPredicate>>,
     any: Option<Vec<RawPredicate>>,
     not: Option<Box<RawPredicate>>,
@@ -236,13 +242,14 @@ impl TryFrom<RawPredicate> for Predicate {
         let field = raw
             .field
             .ok_or("predicate has no `field` and is not all/any/not")?;
-        match (raw.eq, raw.ne, raw.in_, raw.empty) {
-            (Some(value), None, None, None) => Ok(Predicate::Eq { field, value }),
-            (None, Some(value), None, None) => Ok(Predicate::Ne { field, value }),
-            (None, None, Some(values), None) => Ok(Predicate::In { field, values }),
-            (None, None, None, Some(empty)) => Ok(Predicate::Empty { field, empty }),
+        match (raw.eq, raw.ne, raw.in_, raw.empty, raw.gte_field) {
+            (Some(value), None, None, None, None) => Ok(Predicate::Eq { field, value }),
+            (None, Some(value), None, None, None) => Ok(Predicate::Ne { field, value }),
+            (None, None, Some(values), None, None) => Ok(Predicate::In { field, values }),
+            (None, None, None, Some(empty), None) => Ok(Predicate::Empty { field, empty }),
+            (None, None, None, None, Some(other)) => Ok(Predicate::GteField { field, other }),
             _ => Err(format!(
-                "predicate on `{field}` must have exactly one of eq/ne/in/empty"
+                "predicate on `{field}` must have exactly one of eq/ne/in/empty/gte_field"
             )),
         }
     }
@@ -510,6 +517,9 @@ embedded_section!(GSTR1_CDNR, "gstr1/cdnr.json");
 embedded_section!(GSTR1_CDNRA, "gstr1/cdnra.json");
 embedded_section!(GSTR1_CDNUR, "gstr1/cdnur.json");
 embedded_section!(GSTR1_CDNURA, "gstr1/cdnura.json");
+embedded_section!(GSTR1_DOC_ISSUE, "gstr1/docs.json");
+embedded_section!(GSTR1_HSN_B2B, "gstr1/hsn-b2b.json");
+embedded_section!(GSTR1_HSN_B2C, "gstr1/hsn-b2c.json");
 
 /// Every section the engine knows, in the order a return reports them.
 pub fn sections() -> Vec<&'static SectionSpec> {
@@ -524,6 +534,9 @@ pub fn sections() -> Vec<&'static SectionSpec> {
         &GSTR1_CDNRA,
         &GSTR1_CDNUR,
         &GSTR1_CDNURA,
+        &GSTR1_DOC_ISSUE,
+        &GSTR1_HSN_B2B,
+        &GSTR1_HSN_B2C,
     ]
 }
 
@@ -731,7 +744,19 @@ mod tests {
         assert_eq!(
             section_codes(),
             [
-                "b2b", "b2ba", "b2cl", "b2cla", "b2cs", "b2csa", "cdnr", "cdnra", "cdnur", "cdnura"
+                "b2b",
+                "b2ba",
+                "b2cl",
+                "b2cla",
+                "b2cs",
+                "b2csa",
+                "cdnr",
+                "cdnra",
+                "cdnur",
+                "cdnura",
+                "doc_issue",
+                "hsn(b2b)",
+                "hsn(b2c)"
             ]
         );
     }

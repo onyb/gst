@@ -447,6 +447,7 @@ mod tests {
             supplier_gstin: "27AAPFU0939F1ZV".into(),
             period: ReturnPeriod::new(7, 2017).unwrap(),
             is_sez: false,
+            aato_over_5cr: false,
         };
         let rows = read(&path, &GSTR1_B2B).expect("reads");
         let report = validate(&GSTR1_B2B, &rows, &ctx);

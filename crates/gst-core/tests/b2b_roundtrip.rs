@@ -17,6 +17,7 @@ fn maharashtra() -> FilingContext {
         supplier_gstin: "27AAPFU0939F1ZV".into(),
         period: ReturnPeriod::new(7, 2017).unwrap(),
         is_sez: false,
+        aato_over_5cr: false,
     }
 }
 
@@ -147,6 +148,7 @@ fn the_same_row_is_interstate_for_a_supplier_in_another_state() {
         supplier_gstin: "37AAPFU0939F1ZV".into(),
         period: ReturnPeriod::new(7, 2017).unwrap(),
         is_sez: false,
+        aato_over_5cr: false,
     };
     let json = payload(&rows, &andhra);
     assert!(json.contains(r#""iamt":8100"#), "{json}");

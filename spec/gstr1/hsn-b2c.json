@@ -1,0 +1,308 @@
+{
+  "$schema": "../section.schema.json",
+  "section": "hsn(b2c)",
+  "return": "gstr1",
+  "title": "HSN Summary \u2014 B2C supplies - 12",
+  "provenance": {
+    "offline_tool": "V3.2.4",
+    "excel_template": "GSTR1_Excel_Workbook_Template_V2.2.xlsx",
+    "csv_template": "Section_wise_CSV_files/GSTR1/hsn(b2c).csv",
+    "verified_on": "2026-07-26"
+  },
+  "source": {
+    "excel": {
+      "sheet": "hsn(b2c)",
+      "header_row": 4,
+      "first_data_row": 5
+    },
+    "csv": {
+      "file": "hsn(b2c).csv",
+      "header_row": 1
+    }
+  },
+  "fields": [
+    {
+      "id": "hsn_sc",
+      "column": "HSN",
+      "order": 0,
+      "type": "text",
+      "required": true,
+      "constraints": [
+        "hsn_length_for_aato",
+        "hsn_code_known"
+      ],
+      "description": "HSN code for goods or SAC for services. Length depends on the filer's turnover band: 4 to 8 digits, or 6 to 8 above 5 crore. The code must exist in the HSN/SAC table, because the description is looked up from it."
+    },
+    {
+      "id": "user_desc",
+      "column": "Description",
+      "order": 1,
+      "type": "text",
+      "required": false,
+      "max_length": 30,
+      "pattern": "^[ A-Za-z0-9_@./&-]{0,30}$",
+      "description": "The filer's own description of the goods or service, kept alongside the official one. Up to 30 characters."
+    },
+    {
+      "id": "uqc",
+      "column": "UQC",
+      "order": 2,
+      "type": "text",
+      "required": true,
+      "pattern": "^[a-zA-Z -]*$",
+      "enum_ref": "../masters/uqc.json#/labels",
+      "transform": "uqc_code",
+      "description": "Unit of measure, chosen as 'CODE-DESCRIPTION'. Only the code reaches the payload."
+    },
+    {
+      "id": "qty",
+      "column": "Total Quantity",
+      "order": 3,
+      "type": "decimal",
+      "required": true,
+      "pattern": "^(-?(\\d{0,13})(\\.\\d{0,2})?)$",
+      "description": "Total quantity supplied under this code and rate. May be negative."
+    },
+    {
+      "id": "total_value",
+      "column": "Total Value",
+      "order": 4,
+      "type": "decimal",
+      "required": false,
+      "pattern": "^(-?(\\d{0,13})(\\.\\d{0,2})?)$",
+      "description": "Total value including tax. Present in the template but NOT carried into the payload \u2014 see notes."
+    },
+    {
+      "id": "rt",
+      "column": "Rate",
+      "order": 5,
+      "type": "decimal",
+      "required": true,
+      "enum_ref": "../masters/tax-rates.json#/item",
+      "description": "Combined tax rate for this line, in percent."
+    },
+    {
+      "id": "txval",
+      "column": "Taxable Value",
+      "order": 6,
+      "type": "decimal",
+      "required": true,
+      "pattern": "^(-?(\\d{0,13})(\\.\\d{0,2})?)$",
+      "description": "Taxable value under this code and rate, excluding tax. May be negative."
+    },
+    {
+      "id": "iamt",
+      "column": "Integrated Tax Amount",
+      "order": 7,
+      "type": "decimal",
+      "required": false,
+      "default": 0,
+      "pattern": "^(-?(\\d{0,13})(\\.\\d{0,2})?)$",
+      "description": "Integrated tax. ENTERED, not derived \u2014 this is the only section where the filer supplies the tax rather than the engine computing it. Required unless both central and state tax are given."
+    },
+    {
+      "id": "camt",
+      "column": "Central Tax Amount",
+      "order": 8,
+      "type": "decimal",
+      "required": false,
+      "default": 0,
+      "pattern": "^(-?(\\d{0,13})(\\.\\d{0,2})?)$",
+      "description": "Central tax, entered. Required together with state tax when integrated tax is absent."
+    },
+    {
+      "id": "samt",
+      "column": "State/UT Tax Amount",
+      "order": 9,
+      "type": "decimal",
+      "required": false,
+      "default": 0,
+      "pattern": "^(-?(\\d{0,13})(\\.\\d{0,2})?)$",
+      "description": "State/UT tax, entered. Required together with central tax when integrated tax is absent."
+    },
+    {
+      "id": "csamt",
+      "column": "Cess Amount",
+      "order": 10,
+      "type": "decimal",
+      "required": false,
+      "default": 0,
+      "pattern": "^(-?(\\d{0,13})(\\.\\d{0,2})?)$",
+      "description": "Cess, entered. Always optional."
+    }
+  ],
+  "rules": [
+    {
+      "id": "hsn(b2c).tax_must_be_stated",
+      "description": "Either integrated tax, or both central and state tax. The reference tests truthiness, so a stated zero counts as not stated \u2014 which is why this compares against 0 rather than checking for a blank cell.",
+      "when": {
+        "field": "iamt",
+        "eq": 0
+      },
+      "assert": {
+        "all": [
+          {
+            "field": "camt",
+            "ne": 0
+          },
+          {
+            "field": "samt",
+            "ne": 0
+          }
+        ]
+      },
+      "message": "Give either Integrated Tax Amount, or both Central Tax Amount and State/UT Tax Amount."
+    }
+  ],
+  "grouping": {},
+  "output": {
+    "record": {
+      "keys": [
+        {
+          "key": "num",
+          "from": "derive:gstr1.record_serial",
+          "description": "1-based serial in row order. See the note: the reference emits 1 for every row."
+        },
+        {
+          "key": "hsn_sc",
+          "from": "field:hsn_sc"
+        },
+        {
+          "key": "user_desc",
+          "from": "field:user_desc",
+          "omit_when_empty": true
+        },
+        {
+          "key": "desc",
+          "from": "derive:gstr1.hsn_description",
+          "omit_when_empty": true,
+          "description": "Official description, looked up from the HSN/SAC table."
+        },
+        {
+          "key": "uqc",
+          "from": "field:uqc",
+          "description": "Just the code, e.g. 'KGS'."
+        },
+        {
+          "key": "qty",
+          "from": "field:qty"
+        },
+        {
+          "key": "rt",
+          "from": "field:rt"
+        },
+        {
+          "key": "txval",
+          "from": "field:txval"
+        },
+        {
+          "key": "iamt",
+          "from": "field:iamt"
+        },
+        {
+          "key": "samt",
+          "from": "field:samt"
+        },
+        {
+          "key": "camt",
+          "from": "field:camt"
+        },
+        {
+          "key": "csamt",
+          "from": "field:csamt"
+        }
+      ]
+    },
+    "derivations": [
+      "gstr1.record_serial",
+      "gstr1.hsn_description"
+    ],
+    "derivation_notes": {
+      "gstr1.record_serial": "num is a 1-based serial in row order. DIVERGENCE: the reference passes a hardcoded 1 for every record, so every row it emits is numbered 1.",
+      "gstr1.hsn_description": "desc is looked up from masters/hsn-codes.json by exact code match, exactly as the reference does. No template column supplies it."
+    }
+  },
+  "notes": [
+    {
+      "kind": "quirk",
+      "text": "This is the only section where TAX IS ENTERED RATHER THAN DERIVED. Every other table computes tax from taxable value and rate; here the filer states the amounts and nothing cross-checks them against rate times taxable value.",
+      "affects": [
+        "iamt",
+        "camt",
+        "samt",
+        "csamt"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "The official description is not a template column. The reference looks it up from its own HSN/SAC table by exact code match and blanks the code when the lookup fails, which then fails the required-code check \u2014 so an unknown code cannot be reported at all. That makes the code table a validation dependency, not a convenience, and it is embedded here for the same reason.",
+      "affects": [
+        "hsn_sc"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "Minimum HSN length depends on the filer's aggregate annual turnover: 6 digits above 5 crore, otherwise 4. The reference reads this from session state, so it is filer context rather than anything the workbook carries.",
+      "affects": [
+        "hsn_sc"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "'Total Value' is a template column that never reaches the payload. The reference reads it for the sheet's own summary row and drops it from the generated JSON.",
+      "affects": [
+        "total_value"
+      ]
+    },
+    {
+      "kind": "divergence",
+      "text": "num is emitted as a 1-based serial here. The reference calls its record builder with a hardcoded 1, so every HSN row it generates carries num = 1. If the portal treats num as a line identifier, that would collapse the whole summary to a single row, so a real serial is emitted instead. Needs differential capture.",
+      "affects": [
+        "output.record"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "A missing-braces bug in the reference makes most of its conditional field logic dead: the branch that trims the unit code is written without braces, so the six statements after it run unconditionally and overwrite the flags computed just above. The effective rules \u2014 code required, description required, rate required, total value NOT required \u2014 are what is captured here, not the flags the code appears to compute.",
+      "affects": [
+        "hsn_sc",
+        "rt",
+        "total_value"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "Quantity, taxable value and every tax amount may be negative, and the reference validates the tax amounts through Math.abs, so a sign is never itself a reason for rejection.",
+      "affects": [
+        "qty",
+        "txval",
+        "iamt",
+        "camt",
+        "samt"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "This table is the B2C supplies half of the HSN summary. The split starts with the 05-2025 period; before it a single HSN table feeds the payload's hsn.data array, and from it the two halves feed hsn.hsn_b2b and hsn.hsn_b2c.",
+      "affects": [
+        "output.record"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "The either/or tax requirement is driven by JavaScript truthiness, so an explicitly entered 0 is treated the same as a blank cell: a row stating zero integrated tax must still supply central and state tax. Blank cells default to 0, so emptiness cannot distinguish the two cases.",
+      "affects": [
+        "iamt",
+        "camt",
+        "samt"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "Codes with a leading zero are a real hazard in Excel. A filer typing 0101 into a general-format cell gets the NUMBER 101, and the leading zero is gone by the time any tool reads the file; the code then fails the length check and, being absent from the code table, cannot be reported at all. The template guards column A with a text-length rule rather than a numeric one, but that does not force the cell's type. The same loss happens in the reference.",
+      "affects": [
+        "hsn_sc"
+      ]
+    }
+  ]
+}

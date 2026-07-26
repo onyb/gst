@@ -1,0 +1,4 @@
+HSN,Description,UQC,Total Quantity,Total Value,Rate,Taxable Value,Integrated Tax Amount,Central Tax Amount,State/UT Tax Amount,Cess Amount
+0101,Live horses,NOS-NUMBERS,10,118000,18,100000,18000,,,
+0102,Live bovine animals,NOS-NUMBERS,5,52500,5,50000,2500,,,
+1006,Rice,KGS-KILOGRAMS,1000,105000,5,100000,,2500,2500,

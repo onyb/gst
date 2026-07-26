@@ -1,0 +1,154 @@
+{
+  "$schema": "../section.schema.json",
+  "section": "doc_issue",
+  "return": "gstr1",
+  "title": "Documents Issued - 13",
+
+  "provenance": {
+    "offline_tool": "V3.2.4",
+    "excel_template": "GSTR1_Excel_Workbook_Template_V2.2.xlsx",
+    "csv_template": "Section_wise_CSV_files/GSTR1/docs.csv",
+    "verified_on": "2026-07-26"
+  },
+
+  "source": {
+    "excel": {
+      "sheet": "docs",
+      "header_row": 4,
+      "first_data_row": 5
+    },
+    "csv": {
+      "file": "docs.csv",
+      "header_row": 1
+    }
+  },
+
+  "fields": [
+    {
+      "id": "doc_typ",
+      "column": "Nature of Document",
+      "order": 0,
+      "type": "text",
+      "required": true,
+      "enum_ref": "../masters/document-types.json#/types",
+      "description": "Which kind of document this range covers. The master's ORDER determines the payload's doc_num, so the two must stay in step."
+    },
+    {
+      "id": "from",
+      "column": "Sr. No. From",
+      "order": 1,
+      "type": "text",
+      "required": true,
+      "pattern": "^([/\\-0]*[a-zA-Z0-9/\\-]*[a-zA-Z1-9]+[a-zA-Z0-9/\\-]*)$",
+      "max_length": 16,
+      "description": "First serial number in the range. Letters, digits, hyphen and slash; must contain at least one character that is not a zero, so an all-zero range is rejected."
+    },
+    {
+      "id": "to",
+      "column": "Sr. No. To",
+      "order": 2,
+      "type": "text",
+      "required": true,
+      "pattern": "^([/\\-0]*[a-zA-Z0-9/\\-]*[a-zA-Z1-9]+[a-zA-Z0-9/\\-]*)$",
+      "max_length": 16,
+      "description": "Last serial number in the range. Same rule as the first. Nothing checks that it actually follows the 'from' value, or that the count matches the range."
+    },
+    {
+      "id": "totnum",
+      "column": "Total Number",
+      "order": 3,
+      "type": "decimal",
+      "required": true,
+      "pattern": "^(\\d*)$",
+      "description": "How many documents the range covers. Whole numbers only — no decimal point, and no sign."
+    },
+    {
+      "id": "cancel",
+      "column": "Cancelled",
+      "order": 4,
+      "type": "decimal",
+      "required": true,
+      "pattern": "^(\\d*)$",
+      "description": "How many of them were cancelled. Whole numbers only, and never more than the total."
+    }
+  ],
+
+  "rules": [
+    {
+      "id": "doc_issue.cancelled_within_total",
+      "description": "You cannot cancel more documents than the range contains.",
+      "assert": { "field": "totnum", "gte_field": "cancel" },
+      "message": "Cancelled cannot be greater than Total Number."
+    }
+  ],
+
+  "grouping": {
+    "invoice_key": ["doc_typ"],
+    "item_key": ["from"],
+    "item_conflict": "error",
+    "invoice_field_conflict": "error"
+  },
+
+  "output": {
+    "invoice": {
+      "keys": [
+        { "key": "doc_num", "from": "derive:gstr1.document_number", "description": "1-based position of the nature of document in the master's fixed order." },
+        { "key": "doc_typ", "from": "field:doc_typ", "description": "The label itself, emitted alongside its number." },
+        { "key": "docs", "from": "nested:item", "description": "One entry per serial range reported for this nature of document." }
+      ]
+    },
+    "item": {
+      "keys": [
+        { "key": "num", "from": "derive:gstr1.record_serial", "description": "1-based position of this range within its nature of document." },
+        { "key": "from", "from": "field:from" },
+        { "key": "to", "from": "field:to" },
+        { "key": "totnum", "from": "field:totnum" },
+        { "key": "cancel", "from": "field:cancel" },
+        { "key": "net_issue", "from": "derive:gstr1.net_issue", "description": "Total less cancelled, computed rather than entered." }
+      ]
+    },
+    "derivations": [
+      "gstr1.document_number",
+      "gstr1.record_serial",
+      "gstr1.net_issue"
+    ],
+    "derivation_notes": {
+      "gstr1.document_number": "doc_num is the 1-based index of the nature of document within the fixed twelve-entry list in masters/document-types.json. The reference hardcodes the same list in its own mapping, so the order is part of the interface, not a presentation choice.",
+      "gstr1.record_serial": "num counts serial ranges within one nature of document, starting at 1.",
+      "gstr1.net_issue": "net_issue = Total Number - Cancelled, computed by the tool rather than entered by the filer."
+    }
+  },
+
+  "notes": [
+    {
+      "kind": "quirk",
+      "text": "This table has no money in it at all: no rate, no taxable value, no tax. It reports how many documents of each kind were issued and how many were cancelled, and is mandatory in every GSTR-1 regardless of what else the filer reports.",
+      "affects": ["output.invoice"]
+    },
+    {
+      "kind": "quirk",
+      "text": "doc_num is positional. It is the index of the nature of document in a fixed twelve-entry list, so the list's order is part of the payload contract — reordering the master would silently relabel every row.",
+      "affects": ["doc_typ"]
+    },
+    {
+      "kind": "quirk",
+      "text": "The serial-number pattern requires at least one character that is not a zero or a separator, so ranges like '0' or '00/00' are rejected while 'A0' and '0A1' are accepted. Nothing checks that 'Sr. No. To' actually follows 'Sr. No. From', nor that Total Number matches the size of the range — a range of A1 to A100 may legitimately declare any count.",
+      "affects": ["from", "to", "totnum"]
+    },
+    {
+      "kind": "quirk",
+      "text": "Total Number and Cancelled accept digits only, with no decimal point and no sign, and the reference reads them with parseFloat rather than an integer parse. net_issue is derived, so a filer cannot state a net figure that contradicts the other two.",
+      "affects": ["totnum", "cancel"]
+    },
+    {
+      "kind": "quirk",
+      "text": "Records sit at the top level of the section payload and are wrapped by the upload envelope under doc_issue.doc_det. Several serial ranges for one nature of document collapse into one record with several entries.",
+      "affects": ["output.invoice"]
+    },
+    {
+      "kind": "quirk",
+      "text": "GSTN's shipped sample CSV for this table is malformed: its rows run together on a single line without line breaks, so it cannot be parsed as CSV at all. Layout reference only.",
+      "affects": ["output.invoice"]
+    }
+  ]
+}

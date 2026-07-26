@@ -28,6 +28,9 @@ pub struct FilingContext {
     pub period: ReturnPeriod,
     /// Whether the filer is an SEZ unit. Forces every line inter-state.
     pub is_sez: bool,
+    /// Whether the filer's aggregate annual turnover exceeds 5 crore, which
+    /// raises the minimum HSN code length from 4 digits to 6.
+    pub aato_over_5cr: bool,
 }
 
 impl FilingContext {
@@ -331,6 +334,32 @@ fn apply_constraint(
                 ))
             }
         }
+        // The reference derives an HSN description from its own code table and
+        // blanks the code when the lookup fails, which then fails the
+        // required-code check. An unknown code is therefore simply unreportable.
+        "hsn_code_known" => {
+            if masters::hsn_description(text).is_some() {
+                Ok(())
+            } else {
+                Err(format!(
+                    "'{}' is not a code in the HSN/SAC table: '{text}'",
+                    field.column
+                ))
+            }
+        }
+        // Minimum code length depends on the filer's turnover band.
+        "hsn_length_for_aato" => {
+            let digits = text.chars().filter(|c| c.is_ascii_digit()).count();
+            let minimum = if ctx.aato_over_5cr { 6 } else { 4 };
+            if text.chars().all(|c| c.is_ascii_digit()) && (minimum..=8).contains(&digits) {
+                Ok(())
+            } else {
+                Err(format!(
+                    "'{}' must be {minimum} to 8 digits for your turnover band — found '{text}'",
+                    field.column
+                ))
+            }
+        }
         "date_within_return_window" => {
             let parsed = parse_date(text)?;
             date::check_window(parsed, ctx.period).map_err(|e| describe_date_error(field, text, e))
@@ -393,6 +422,8 @@ fn to_cell(field: &Field, checked: &str, _ctx: &FilingContext) -> Result<Cell, S
         Some("date_normalize") => Ok(Cell::Date(parse_date(checked)?)),
         // Already applied before validation, since later checks need the code.
         Some("state_code_prefix") => Ok(Cell::Text(checked.to_owned())),
+        // 'KGS-KILOGRAMS' becomes 'KGS'; 'NA' passes through whole.
+        Some("uqc_code") => Ok(Cell::Text(masters::uqc_code(checked))),
         Some(other) => Err(format!(
             "spec names transform '{other}', which the engine does not implement"
         )),
@@ -455,6 +486,15 @@ pub fn evaluate(predicate: &Predicate, record: &Record) -> bool {
             values.iter().any(|v| v.matches_text(&text))
         }
         Predicate::Empty { field, empty } => record.get(field).is_empty() == *empty,
+        Predicate::GteField { field, other } => {
+            match (record.number(field), record.number(other)) {
+                (Some(a), Some(b)) => a >= b,
+                // A non-numeric side cannot be compared; field-level validation
+                // has already rejected such a row, so treat it as satisfied
+                // rather than reporting the same problem twice.
+                _ => true,
+            }
+        }
         Predicate::All(preds) => preds.iter().all(|p| evaluate(p, record)),
         Predicate::Any(preds) => preds.iter().any(|p| evaluate(p, record)),
         Predicate::Not(pred) => !evaluate(pred, record),
@@ -472,6 +512,7 @@ mod tests {
             supplier_gstin: "27AAPFU0939F1ZV".into(),
             period: ReturnPeriod::new(7, 2017).unwrap(),
             is_sez: false,
+            aato_over_5cr: false,
         }
     }
 

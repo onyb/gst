@@ -46,6 +46,9 @@ enum Command {
         /// Treat the filer as an SEZ unit
         #[arg(long)]
         sez: bool,
+        /// Aggregate annual turnover exceeds 5 crore (6-digit HSN required)
+        #[arg(long = "aato-over-5cr")]
+        aato_over_5cr: bool,
         /// Aggregate turnover, if the period requires it
         #[arg(long)]
         gt: Option<String>,
@@ -87,6 +90,9 @@ struct Filing {
     /// Treat the filer as an SEZ unit, which makes every supply inter-state
     #[arg(long)]
     sez: bool,
+    /// Aggregate annual turnover exceeds 5 crore, which requires 6-digit HSN
+    #[arg(long = "aato-over-5cr")]
+    aato_over_5cr: bool,
     /// Section to read. Auto-detection from workbook shape is not built yet.
     #[arg(long, default_value = "b2b")]
     section: String,
@@ -120,10 +126,20 @@ fn main() -> ExitCode {
             gstin,
             period,
             sez,
+            aato_over_5cr,
             gt,
             cur_gt,
             output,
-        } => run_upload(&workbook, &gstin, &period, sez, gt, cur_gt, &output),
+        } => run_upload(
+            &workbook,
+            &gstin,
+            &period,
+            sez,
+            aato_over_5cr,
+            gt,
+            cur_gt,
+            &output,
+        ),
         Command::Summary { .. } => {
             unimplemented("summary", "the section total calculator is not built yet")
         }
@@ -165,6 +181,7 @@ fn prepare(filing: &Filing) -> Result<(FilingContext, &'static SectionSpec), Str
             supplier_gstin: filing.gstin.clone(),
             period,
             is_sez: filing.sez,
+            aato_over_5cr: filing.aato_over_5cr,
         },
         spec,
     ))
@@ -376,6 +393,7 @@ fn run_upload(
     gstin: &str,
     period: &str,
     sez: bool,
+    aato_over_5cr: bool,
     gt: Option<String>,
     cur_gt: Option<String>,
     output: &Path,
@@ -392,6 +410,7 @@ fn run_upload(
         supplier_gstin: gstin.to_owned(),
         period: parsed_period,
         is_sez: sez,
+        aato_over_5cr,
     };
 
     let parse_turnover = |flag: &str, raw: Option<String>| match raw {

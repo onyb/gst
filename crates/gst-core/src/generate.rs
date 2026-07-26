@@ -553,6 +553,42 @@ fn derive(
     match name {
         "gstr1.item_num" => Json::Num(item_num(record)),
         "gstr1.cess" => Json::Num(tax_split(record, ctx).csamt),
+        // The official description for the row's HSN code, looked up rather
+        // than entered — the template has no column for it.
+        "gstr1.hsn_description" => match crate::masters::hsn_description(&record.text("hsn_sc")) {
+            Some(desc) => Json::Str(desc.to_owned()),
+            None => Json::Str(String::new()),
+        },
+        // 1-based position of this record in row order. Used where the payload
+        // carries a serial rather than a rate-derived number.
+        "gstr1.record_serial" => Json::Num(Decimal::from(_index + 1)),
+        // 1-based index of the document nature in the master's fixed order.
+        "gstr1.document_number" => {
+            let typ = record.text("doc_typ");
+            match crate::masters::DOCUMENT_TYPES
+                .iter()
+                .position(|t| *t == typ)
+            {
+                Some(i) => Json::Num(Decimal::from(i + 1)),
+                None => {
+                    findings.push(Finding {
+                        sheet_row: record.sheet_row,
+                        column: None,
+                        field: None,
+                        rule: Some("output.unknown_document_type".into()),
+                        severity: Severity::Error,
+                        message: format!("'{typ}' is not a known nature of document"),
+                    });
+                    Json::Null
+                }
+            }
+        }
+        // Documents actually issued: total less cancelled.
+        "gstr1.net_issue" => {
+            let total = record.number("totnum").unwrap_or_default();
+            let cancelled = record.number("cancel").unwrap_or_default();
+            Json::Num(total - cancelled)
+        }
         // The MMYYYY period an amendment corrects, from its financial year and
         // spelled-out month.
         "gstr1.original_period" => {
@@ -634,6 +670,10 @@ fn derive(
 pub fn unimplemented_derivations(spec: &SectionSpec) -> Vec<&str> {
     const KNOWN: &[&str] = &[
         "gstr1.item_num",
+        "gstr1.record_serial",
+        "gstr1.hsn_description",
+        "gstr1.document_number",
+        "gstr1.net_issue",
         "gstr1.original_period",
         "gstr1.tax_split",
         "gstr1.tax_split_by_pos",

@@ -1,0 +1,17 @@
+{
+  "description": "Natures of document reported in the documents-issued table. ORDER IS SIGNIFICANT: the payload's doc_num is this list's 1-based index, so reordering would silently mislabel every row. Taken from the DOCUMENT dropdown range and the same list hardcoded in the tool's own mapping.",
+  "types": [
+    "Invoices for outward supply",
+    "Invoices for inward supply from unregistered person",
+    "Revised Invoice",
+    "Debit Note",
+    "Credit Note",
+    "Receipt Voucher",
+    "Payment Voucher",
+    "Refund Voucher",
+    "Delivery Challan for job work",
+    "Delivery Challan for supply on approval",
+    "Delivery Challan in case of liquid gas",
+    "Delivery Challan in case other than by way of supply (excluding at S no. 9 to 11)"
+  ]
+}

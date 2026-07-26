@@ -1,0 +1,6 @@
+Nature of Document,Sr. No. From,Sr. No. To,Total Number,Cancelled
+Invoices for outward supply,INV-001,INV-100,100,2
+Invoices for outward supply,INV-201,INV-250,50,0
+Credit Note,CN-001,CN-010,10,1
+Debit Note,DN-001,DN-005,5,0
+Delivery Challan for job work,DC-001,DC-020,20,3

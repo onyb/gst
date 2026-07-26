@@ -72,6 +72,11 @@ struct ReasonsFile {
     reasons: Vec<Code>,
 }
 
+#[derive(Deserialize)]
+struct DocumentTypesFile {
+    types: Vec<String>,
+}
+
 fn embedded<T: serde::de::DeserializeOwned>(name: &str, json: &str) -> T {
     serde_json::from_str(json).unwrap_or_else(|e| panic!("embedded spec {name} is invalid: {e}"))
 }
@@ -106,6 +111,78 @@ pub static NOTE_REASONS: LazyLock<Vec<Code>> = LazyLock::new(|| {
     .reasons
 });
 
+/// An HSN or SAC code and its official description.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct HsnCode {
+    #[serde(rename = "c")]
+    pub code: String,
+    /// Defaulted because exactly one entry in GSTN's own table has no
+    /// description at all (code 52083110).
+    #[serde(rename = "n", default)]
+    pub description: String,
+}
+
+#[derive(Deserialize)]
+struct HsnFile {
+    codes: Vec<HsnCode>,
+}
+
+/// HSN/SAC codes indexed by code, for the exact-match lookup the reference does.
+pub static HSN_CODES: LazyLock<std::collections::HashMap<String, String>> = LazyLock::new(|| {
+    embedded::<HsnFile>(
+        "hsn-codes.json",
+        include_str!("../../../spec/masters/hsn-codes.json"),
+    )
+    .codes
+    .into_iter()
+    .map(|c| (c.code, c.description))
+    .collect()
+});
+
+/// The official description for an HSN code, by exact match.
+///
+/// The reference derives the description this way and blanks the code when the
+/// lookup fails, so an unknown code cannot be reported at all.
+pub fn hsn_description(code: &str) -> Option<&'static str> {
+    HSN_CODES
+        .get(code.trim())
+        .map(String::as_str)
+        // An empty description counts as absent: the reference blanks the code
+        // when its lookup yields nothing, which then fails the required-code
+        // check. One code in the shipped table has no description, so it is
+        // unreportable in the reference too.
+        .filter(|d| !d.is_empty())
+}
+
+/// Unit quantity labels, as 'CODE-DESCRIPTION'.
+pub static UQC_LABELS: LazyLock<Vec<String>> = LazyLock::new(|| {
+    embedded::<UqcFile>("uqc.json", include_str!("../../../spec/masters/uqc.json")).labels
+});
+
+#[derive(Deserialize)]
+struct UqcFile {
+    labels: Vec<String>,
+}
+
+/// The code a unit-quantity label carries before its hyphen: 'KGS-KILOGRAMS'
+/// becomes 'KGS'. A label with no hyphen, such as 'NA', passes through whole.
+pub fn uqc_code(label: &str) -> String {
+    let label = label.trim();
+    match label.split_once('-') {
+        Some((code, _)) => code.trim().to_owned(),
+        None => label.to_owned(),
+    }
+}
+
+/// Natures of document, in the order that defines their payload numbering.
+pub static DOCUMENT_TYPES: LazyLock<Vec<String>> = LazyLock::new(|| {
+    embedded::<DocumentTypesFile>(
+        "document-types.json",
+        include_str!("../../../spec/masters/document-types.json"),
+    )
+    .types
+});
+
 /// Look up a state by its two-digit code.
 pub fn state_by_code(code: &str) -> Option<&'static State> {
     STATES.iter().find(|s| s.code == code)
@@ -128,6 +205,11 @@ const MASTER_FILES: &[(&str, &str)] = &[
     (
         "note-reasons.json",
         include_str!("../../../spec/masters/note-reasons.json"),
+    ),
+    ("uqc.json", include_str!("../../../spec/masters/uqc.json")),
+    (
+        "document-types.json",
+        include_str!("../../../spec/masters/document-types.json"),
     ),
     (
         "months.json",
