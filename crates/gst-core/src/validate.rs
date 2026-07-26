@@ -16,7 +16,7 @@ use crate::date::{self, DateError, ReturnPeriod};
 use crate::gstin;
 use crate::masters;
 use crate::record::{Cell, Record, Row};
-use crate::spec::{Field, FieldType, Predicate, SectionSpec, Severity, SpecValue};
+use crate::spec::{Constraint, Field, FieldType, Predicate, SectionSpec, Severity, SpecValue};
 
 /// Everything about the filer that validation and generation depend on.
 ///
@@ -223,8 +223,13 @@ fn validate_field(field: &Field, raw: &str, ctx: &FilingContext) -> Result<Cell,
         ));
     }
 
+    // Period-scoped constraints only fire for the period being filed, which is
+    // how a rule that changed on a cutover date stays a spec fact.
+    let period = ctx.period.as_yyyymm();
     for constraint in &field.constraints {
-        apply_constraint(constraint, field, &checked, ctx)?;
+        if constraint.applies_to(period) {
+            apply_constraint(constraint, field, &checked, ctx)?;
+        }
     }
 
     if field.ty == FieldType::Gstin && !gstin::matches_any_form(&checked, &field.accepts) {
@@ -239,12 +244,50 @@ fn validate_field(field: &Field, raw: &str, ctx: &FilingContext) -> Result<Cell,
 
 /// Named field-level checks the spec refers to by name.
 fn apply_constraint(
-    name: &str,
+    constraint: &Constraint,
     field: &Field,
     text: &str,
     ctx: &FilingContext,
 ) -> Result<(), String> {
-    match name {
+    match constraint.name.as_str() {
+        // A minimum the value must exceed, taken from the spec so a threshold
+        // that changes on a cutover date stays a spec fact. Strictly greater:
+        // a value exactly at the threshold does not qualify.
+        "min_exclusive" => {
+            let limit = constraint.value.ok_or_else(|| {
+                format!(
+                    "spec constraint 'min_exclusive' on '{}' has no value",
+                    field.column
+                )
+            })?;
+            let actual: Decimal = text
+                .parse()
+                .map_err(|_| format!("'{}' is not a number: '{text}'", field.column))?;
+            if actual > limit {
+                Ok(())
+            } else {
+                Err(format!(
+                    "'{}' must be more than {} for this return period — found {actual}",
+                    field.column,
+                    limit.normalize()
+                ))
+            }
+        }
+        // Inter-state-only sections: the place of supply cannot be the
+        // supplier's own state. The reference skips this for an SEZ supplier,
+        // whose supplies are treated as inter-state regardless.
+        "pos_differs_from_supplier_state" => {
+            if ctx.is_sez {
+                return Ok(());
+            }
+            match ctx.supplier_state() {
+                Some(state) if state == text => Err(format!(
+                    "'{}' is your own state ({state}) — this section is for inter-state supplies only",
+                    field.column
+                )),
+                _ => Ok(()),
+            }
+        }
         // Document numbers that are numerically zero are rejected even though
         // they satisfy the character pattern. Non-numeric numbers are fine.
         "numeric_value_not_zero" => match text.parse::<Decimal>() {

@@ -219,9 +219,36 @@
         },
         "max_length": { "type": "integer", "minimum": 1 },
         "constraints": {
-          "description": "Named field-level checks beyond pattern/enum, implemented by the engine.",
+          "description": "Named field-level checks beyond pattern/enum, implemented by the engine. A bare string names a check that takes no parameters; the object form carries a parameter and/or limits the check to a range of return periods, so period-dependent rules keep their numbers in the spec rather than in code.",
           "type": "array",
-          "items": { "type": "string" }
+          "items": {
+            "oneOf": [
+              { "type": "string" },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["name"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "value": {
+                    "description": "Parameter for checks that compare against a number, e.g. a minimum.",
+                    "type": "number"
+                  },
+                  "from_period": {
+                    "description": "Applies only when the return period is this period or later (MMYYYY).",
+                    "type": "string",
+                    "pattern": "^(0[1-9]|1[0-2])[0-9]{4}$"
+                  },
+                  "until_period": {
+                    "description": "Applies only when the return period is strictly earlier than this period (MMYYYY).",
+                    "type": "string",
+                    "pattern": "^(0[1-9]|1[0-2])[0-9]{4}$"
+                  },
+                  "description": { "type": "string" }
+                }
+              }
+            ]
+          }
         },
         "transform": {
           "description": "Named normalization applied to the accepted value before grouping and output.",

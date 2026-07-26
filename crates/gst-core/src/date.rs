@@ -52,6 +52,12 @@ impl ReturnPeriod {
         Self::new(text[..2].parse().ok()?, text[2..].parse().ok()?)
     }
 
+    /// The period as comparable `YYYYMM`, which is how period-scoped spec
+    /// constraints are ordered.
+    pub fn as_yyyymm(&self) -> u32 {
+        self.year as u32 * 100 + self.month
+    }
+
     /// Last day of the period — the latest date any document may carry.
     pub fn last_day(&self) -> NaiveDate {
         let (next_month, next_year) = if self.month == 12 {

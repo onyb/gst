@@ -65,6 +65,91 @@ pub enum GstinForm {
     Eco,
 }
 
+/// A named field-level check, optionally parameterized and optionally scoped to
+/// a range of return periods.
+///
+/// Period scoping is what keeps rules like the B2C(Large) value threshold —
+/// which changed with the August 2024 period — expressed in the spec, numbers
+/// and cutover date included, rather than buried in the engine.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Constraint {
+    pub name: String,
+    pub value: Option<Decimal>,
+    /// Applies when the return period is this period or later.
+    pub from_period: Option<String>,
+    /// Applies when the return period is strictly earlier than this period.
+    pub until_period: Option<String>,
+}
+
+impl Constraint {
+    /// Whether this constraint applies to a return period, as YYYYMM.
+    pub fn applies_to(&self, period_yyyymm: u32) -> bool {
+        let bound = |p: &Option<String>| p.as_deref().and_then(period_as_yyyymm);
+        if let Some(from) = bound(&self.from_period)
+            && period_yyyymm < from
+        {
+            return false;
+        }
+        if let Some(until) = bound(&self.until_period)
+            && period_yyyymm >= until
+        {
+            return false;
+        }
+        true
+    }
+}
+
+/// `MMYYYY` (as spec files and the portal write it) to comparable `YYYYMM`.
+pub fn period_as_yyyymm(text: &str) -> Option<u32> {
+    if text.len() != 6 || !text.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    let month: u32 = text[..2].parse().ok()?;
+    let year: u32 = text[2..].parse().ok()?;
+    (1..=12).contains(&month).then_some(year * 100 + month)
+}
+
+/// Wire form: a bare string names a parameterless check; the object form
+/// carries the parameter and period scope.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum RawConstraint {
+    Name(String),
+    Detailed {
+        name: String,
+        value: Option<Decimal>,
+        from_period: Option<String>,
+        until_period: Option<String>,
+        #[allow(dead_code)]
+        description: Option<String>,
+    },
+}
+
+impl<'de> Deserialize<'de> for Constraint {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(match RawConstraint::deserialize(d)? {
+            RawConstraint::Name(name) => Constraint {
+                name,
+                value: None,
+                from_period: None,
+                until_period: None,
+            },
+            RawConstraint::Detailed {
+                name,
+                value,
+                from_period,
+                until_period,
+                ..
+            } => Constraint {
+                name,
+                value,
+                from_period,
+                until_period,
+            },
+        })
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Field {
     pub id: String,
@@ -85,7 +170,7 @@ pub struct Field {
     pub allowed: Option<Vec<SpecValue>>,
     pub max_length: Option<usize>,
     #[serde(default)]
-    pub constraints: Vec<String>,
+    pub constraints: Vec<Constraint>,
     pub transform: Option<String>,
     #[serde(default)]
     pub must_be_empty: bool,
@@ -557,6 +642,48 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn period_scoped_constraints_apply_only_within_their_range() {
+        let until = Constraint {
+            name: "min_exclusive".into(),
+            value: Some(Decimal::from(250000)),
+            from_period: None,
+            until_period: Some("082024".into()),
+        };
+        let from = Constraint {
+            name: "min_exclusive".into(),
+            value: Some(Decimal::from(100000)),
+            from_period: Some("082024".into()),
+            until_period: None,
+        };
+        // July 2024 is before the cutover; August 2024 is on it.
+        assert!(until.applies_to(202407));
+        assert!(!from.applies_to(202407));
+        assert!(!until.applies_to(202408));
+        assert!(from.applies_to(202408));
+        assert!(from.applies_to(202512));
+
+        // Unscoped constraints always apply.
+        let always = Constraint {
+            name: "pos_code_range".into(),
+            value: None,
+            from_period: None,
+            until_period: None,
+        };
+        assert!(always.applies_to(201707));
+        assert!(always.applies_to(203001));
+    }
+
+    #[test]
+    fn period_strings_order_as_yyyymm() {
+        assert_eq!(period_as_yyyymm("082024"), Some(202408));
+        assert_eq!(period_as_yyyymm("122017"), Some(201712));
+        assert!(period_as_yyyymm("072017").unwrap() < period_as_yyyymm("082024").unwrap());
+        assert_eq!(period_as_yyyymm("132024"), None);
+        assert_eq!(period_as_yyyymm("82024"), None);
+        assert_eq!(period_as_yyyymm("abcdef"), None);
     }
 
     #[test]
