@@ -1,43 +1,52 @@
 {
-  "description": "B2B invoice type codes. table4 = GSTR-1 table 4 (B2B/SEZ/DE); table15 = ECO table 15 variant (no CBW).",
+  "description": "B2B invoice type codes. table4 = GSTR-1 table 4 (B2B/SEZ/DE); table15 = ECO table 15 variant (no CBW). The Excel/CSV import path and the official tool's own UI use different labels for the same code — import_label is what a workbook must contain, ui_label is what the tool displays. Order follows the template's dropdown.",
   "table4": [
     {
       "code": "R",
-      "name": "Regular B2B"
-    },
-    {
-      "code": "DE",
-      "name": "Deemed Exports"
+      "import_label": "Regular B2B",
+      "ui_label": "Regular B2B"
     },
     {
       "code": "SEWP",
-      "name": "SEZ Supplies with payment"
+      "import_label": "SEZ supplies with payment",
+      "ui_label": "SEZ Supplies with payment"
     },
     {
       "code": "SEWOP",
-      "name": "SEZ Supplies without payment"
+      "import_label": "SEZ supplies without payment",
+      "ui_label": "SEZ Supplies without payment"
+    },
+    {
+      "code": "DE",
+      "import_label": "Deemed Exp",
+      "ui_label": "Deemed Exports"
     },
     {
       "code": "CBW",
-      "name": "Intra-State supplies attracting IGST"
+      "import_label": "Intra-State supplies attracting IGST",
+      "ui_label": "Intra-State supplies attracting IGST"
     }
   ],
   "table15": [
     {
       "code": "R",
-      "name": "Regular"
-    },
-    {
-      "code": "DE",
-      "name": "Deemed Exports"
+      "import_label": "Regular",
+      "ui_label": "Regular"
     },
     {
       "code": "SEWP",
-      "name": "SEZ Supplies with payment"
+      "import_label": "SEZ supplies with payment",
+      "ui_label": "SEZ Supplies with payment"
     },
     {
       "code": "SEWOP",
-      "name": "SEZ Supplies without payment"
+      "import_label": "SEZ supplies without payment",
+      "ui_label": "SEZ Supplies without payment"
+    },
+    {
+      "code": "DE",
+      "import_label": "Deemed Exp",
+      "ui_label": "Deemed Exports"
     }
   ]
 }

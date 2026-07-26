@@ -32,11 +32,32 @@ pub struct Code {
     pub name: String,
 }
 
+/// An invoice type. The import label is what an Excel or CSV workbook must
+/// contain; the UI label is what the official tool displays for the same code.
+/// The two differ, so matching an imported row against the display label
+/// silently rejects valid workbooks.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct InvoiceType {
+    pub code: String,
+    pub import_label: String,
+    pub ui_label: String,
+}
+
 /// B2B invoice types: table 4 (B2B/SEZ/DE) and the ECO table 15 variant.
 #[derive(Debug, Clone, Deserialize)]
 pub struct InvoiceTypes {
-    pub table4: Vec<Code>,
-    pub table15: Vec<Code>,
+    pub table4: Vec<InvoiceType>,
+    pub table15: Vec<InvoiceType>,
+}
+
+/// Resolve a workbook's invoice type label to its code, the way the import
+/// path does: trim surrounding whitespace, then match the import label exactly.
+pub fn invoice_type_code<'a>(types: &'a [InvoiceType], label: &str) -> Option<&'a str> {
+    let label = label.trim();
+    types
+        .iter()
+        .find(|t| t.import_label == label)
+        .map(|t| t.code.as_str())
 }
 
 #[derive(Deserialize)]
@@ -113,6 +134,30 @@ mod tests {
     fn invoice_types_table15_excludes_cbw() {
         assert!(INVOICE_TYPES.table4.iter().any(|t| t.code == "CBW"));
         assert!(INVOICE_TYPES.table15.iter().all(|t| t.code != "CBW"));
+    }
+
+    #[test]
+    fn invoice_type_resolves_import_label_not_ui_label() {
+        let t4 = &INVOICE_TYPES.table4;
+        assert_eq!(invoice_type_code(t4, "Deemed Exp"), Some("DE"));
+        assert_eq!(invoice_type_code(t4, "  Deemed Exp  "), Some("DE"));
+        assert_eq!(
+            invoice_type_code(t4, "SEZ supplies with payment"),
+            Some("SEWP")
+        );
+
+        // The UI spells these differently; a workbook using the displayed
+        // label is not accepted by the import path.
+        assert_eq!(invoice_type_code(t4, "Deemed Exports"), None);
+        assert_eq!(invoice_type_code(t4, "SEZ Supplies with payment"), None);
+
+        // 'Regular B2B' is table 4; the ECO variant says plain 'Regular'.
+        assert_eq!(invoice_type_code(t4, "Regular B2B"), Some("R"));
+        assert_eq!(invoice_type_code(t4, "Regular"), None);
+        assert_eq!(
+            invoice_type_code(&INVOICE_TYPES.table15, "Regular"),
+            Some("R")
+        );
     }
 
     #[test]
