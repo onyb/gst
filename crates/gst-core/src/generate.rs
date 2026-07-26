@@ -172,6 +172,18 @@ pub fn generate(spec: &SectionSpec, records: &[Record], ctx: &FilingContext) -> 
         }
     }
 
+    // A section with an invoice level but no envelope puts its records at the
+    // top level of the payload while still carrying line items.
+    if spec.output.envelope.is_none() {
+        for (_, envelope) in envelopes {
+            for (_, invoice) in &envelope.invoices {
+                out.envelopes
+                    .push(build_invoice(spec, invoice, ctx, &mut out.findings));
+            }
+        }
+        return out;
+    }
+
     for (_, envelope) in envelopes {
         out.envelopes
             .push(build_envelope(spec, &envelope, ctx, &mut out.findings));
@@ -513,6 +525,28 @@ fn derive(
     match name {
         "gstr1.item_num" => Json::Num(item_num(record)),
         "gstr1.cess" => Json::Num(tax_split(record, ctx).csamt),
+        // The MMYYYY period an amendment corrects, from its financial year and
+        // spelled-out month.
+        "gstr1.original_period" => {
+            let fy = record.text("fy");
+            let month = record.text("omonth");
+            match crate::date::period_from_financial_year(&fy, &month) {
+                Some(period) => Json::Str(period),
+                None => {
+                    findings.push(Finding {
+                        sheet_row: record.sheet_row,
+                        column: None,
+                        field: None,
+                        rule: Some("output.original_period_unresolvable".into()),
+                        severity: Severity::Error,
+                        message: format!(
+                            "cannot work out which period '{month}' of '{fy}' refers to"
+                        ),
+                    });
+                    Json::Null
+                }
+            }
+        }
         // 'INTRA' or 'INTER', which flat sections carry as a field of their own.
         "gstr1.supply_type" => Json::Str(
             if is_intra_state_by_pos(record, ctx) {
@@ -572,6 +606,7 @@ fn derive(
 pub fn unimplemented_derivations(spec: &SectionSpec) -> Vec<&str> {
     const KNOWN: &[&str] = &[
         "gstr1.item_num",
+        "gstr1.original_period",
         "gstr1.tax_split",
         "gstr1.tax_split_by_pos",
         "gstr1.supply_type",

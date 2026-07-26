@@ -1,0 +1,16 @@
+{
+  "description": "Indian financial years accepted by the offline tool, running April to March. The list is fixed in the tool rather than computed, so it ends at 2027-28 and will need extending when GSTN ships a later version.",
+  "years": [
+    "2017-18",
+    "2018-19",
+    "2019-20",
+    "2020-21",
+    "2021-22",
+    "2022-23",
+    "2023-24",
+    "2024-25",
+    "2025-26",
+    "2026-27",
+    "2027-28"
+  ]
+}

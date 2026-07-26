@@ -1,0 +1,17 @@
+{
+  "description": "Month names as the GSTR-1 templates spell them for amendment tables: uppercase, full names. Import matches these exactly — 'July' is rejected where 'JULY' is accepted.",
+  "names": [
+    "JANUARY",
+    "FEBRUARY",
+    "MARCH",
+    "APRIL",
+    "MAY",
+    "JUNE",
+    "JULY",
+    "AUGUST",
+    "SEPTEMBER",
+    "OCTOBER",
+    "NOVEMBER",
+    "DECEMBER"
+  ]
+}

@@ -137,6 +137,45 @@ pub fn check_window(date: NaiveDate, period: ReturnPeriod) -> Result<(), DateErr
     Ok(())
 }
 
+/// Month number from a full month name, case-insensitively.
+///
+/// Amendment tables identify the period being corrected by a spelled-out month
+/// plus a financial year rather than a date.
+pub fn month_number(name: &str) -> Option<u32> {
+    const FULL: [&str; 12] = [
+        "january",
+        "february",
+        "march",
+        "april",
+        "may",
+        "june",
+        "july",
+        "august",
+        "september",
+        "october",
+        "november",
+        "december",
+    ];
+    let name = name.trim().to_ascii_lowercase();
+    FULL.iter().position(|m| *m == name).map(|i| i as u32 + 1)
+}
+
+/// The `MMYYYY` period a financial year and month name identify.
+///
+/// Indian financial years run April to March, so JANUARY of `2017-18` is
+/// January 2018, not 2017 — which is why amendment tables need both columns to
+/// pin down a single period.
+pub fn period_from_financial_year(fy: &str, month_name: &str) -> Option<String> {
+    let month = month_number(month_name)?;
+    let start_year: i32 = fy.trim().get(..4)?.parse().ok()?;
+    let year = if month >= 4 {
+        start_year
+    } else {
+        start_year + 1
+    };
+    Some(format!("{month:02}{year:04}"))
+}
+
 /// Render as `DD-MM-YYYY`, the form the upload payload carries.
 pub fn normalize(date: NaiveDate) -> String {
     format!("{:02}-{:02}-{:04}", date.day(), date.month(), date.year())
@@ -219,6 +258,44 @@ mod tests {
             ReturnPeriod::new(2, 2023).unwrap().last_day(),
             ymd(2023, 2, 28)
         );
+    }
+
+    #[test]
+    fn financial_year_and_month_pin_down_a_period() {
+        // April to March: July belongs to the opening calendar year, January to
+        // the closing one.
+        assert_eq!(
+            period_from_financial_year("2017-18", "JULY").as_deref(),
+            Some("072017")
+        );
+        assert_eq!(
+            period_from_financial_year("2017-18", "JANUARY").as_deref(),
+            Some("012018")
+        );
+        assert_eq!(
+            period_from_financial_year("2017-18", "MARCH").as_deref(),
+            Some("032018")
+        );
+        assert_eq!(
+            period_from_financial_year("2017-18", "APRIL").as_deref(),
+            Some("042017")
+        );
+        // Case does not matter to the lookup itself.
+        assert_eq!(
+            period_from_financial_year("2024-25", "december").as_deref(),
+            Some("122024")
+        );
+        assert_eq!(period_from_financial_year("2017-18", "SMARCH"), None);
+        assert_eq!(period_from_financial_year("bad", "JULY"), None);
+    }
+
+    #[test]
+    fn month_numbers_come_from_full_names() {
+        assert_eq!(month_number("JANUARY"), Some(1));
+        assert_eq!(month_number("December"), Some(12));
+        assert_eq!(month_number("  july  "), Some(7));
+        assert_eq!(month_number("Jul"), None);
+        assert_eq!(month_number(""), None);
     }
 
     #[test]

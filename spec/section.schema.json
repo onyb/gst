@@ -144,14 +144,17 @@
       "additionalProperties": false,
       "anyOf": [
         { "required": ["record"] },
-        { "required": ["envelope", "invoice"] }
+        { "required": ["invoice"] }
       ],
       "properties": {
         "record": {
           "description": "Flat sections only: maps one validated row to one payload object. Mutually exclusive with envelope/invoice/item.",
           "$ref": "#/$defs/payload_object"
         },
-        "envelope": { "$ref": "#/$defs/payload_object" },
+        "envelope": {
+          "description": "Outer grouping object, e.g. one per recipient or place of supply. Omit it for a section whose records sit at the top level of the payload but still carry line items.",
+          "$ref": "#/$defs/payload_object"
+        },
         "invoice": { "$ref": "#/$defs/payload_object" },
         "item": { "$ref": "#/$defs/payload_object" },
         "derivations": {

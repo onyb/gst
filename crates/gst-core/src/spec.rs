@@ -715,7 +715,10 @@ mod tests {
         assert!(section("b2b").is_some());
         assert!(section("b2ba").is_some());
         assert!(section("cdnr").is_none());
-        assert_eq!(section_codes(), ["b2b", "b2ba", "b2cl", "b2cla", "b2cs"]);
+        assert_eq!(
+            section_codes(),
+            ["b2b", "b2ba", "b2cl", "b2cla", "b2cs"]
+        );
     }
 
     #[test]

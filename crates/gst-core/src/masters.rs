@@ -129,6 +129,14 @@ const MASTER_FILES: &[(&str, &str)] = &[
         "note-reasons.json",
         include_str!("../../../spec/masters/note-reasons.json"),
     ),
+    (
+        "months.json",
+        include_str!("../../../spec/masters/months.json"),
+    ),
+    (
+        "financial-years.json",
+        include_str!("../../../spec/masters/financial-years.json"),
+    ),
 ];
 
 /// Resolve a field's `enum_ref` to the values a cell may hold.
