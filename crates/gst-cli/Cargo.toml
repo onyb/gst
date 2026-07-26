@@ -1,0 +1,16 @@
+[package]
+name = "gst-cli"
+description = "Prepare Indian GST returns offline: validate workbooks, generate portal upload JSON"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "gst"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+gst-core = { path = "../gst-core" }

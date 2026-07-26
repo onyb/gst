@@ -1,0 +1,16 @@
+[workspace]
+resolver = "3"
+members = ["crates/gst-core", "crates/gst-cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MPL-2.0"
+repository = "https://github.com/onyb/gst"
+
+[workspace.dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+rust_decimal = { version = "1", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
