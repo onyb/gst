@@ -1,0 +1,276 @@
+{
+  "$schema": "../section.schema.json",
+  "section": "ata",
+  "return": "gstr1",
+  "title": "Amended Advance Received - 11(II) A(1), 11(II) A(2)",
+  "provenance": {
+    "offline_tool": "V3.2.4",
+    "excel_template": "GSTR1_Excel_Workbook_Template_V2.2.xlsx",
+    "csv_template": "Section_wise_CSV_files/GSTR1/ata.csv",
+    "verified_on": "2026-07-26"
+  },
+  "source": {
+    "excel": {
+      "sheet": "ata",
+      "header_row": 4,
+      "first_data_row": 5
+    },
+    "csv": {
+      "file": "ata.csv",
+      "header_row": 1
+    }
+  },
+  "fields": [
+    {
+      "id": "fy",
+      "column": "Financial Year",
+      "order": 0,
+      "type": "text",
+      "required": true,
+      "enum_ref": "../masters/financial-years.json#/years",
+      "description": "Financial year of the period being amended, as 'YYYY-YY'."
+    },
+    {
+      "id": "omonth",
+      "column": "Original Month",
+      "order": 1,
+      "type": "text",
+      "required": true,
+      "enum_ref": "../masters/months.json#/names",
+      "description": "Month of the period being amended, spelled out in capitals. Combined with the financial year to give the MMYYYY period the payload carries as omon."
+    },
+    {
+      "id": "pos",
+      "column": "Original Place Of Supply",
+      "order": 2,
+      "type": "state_code",
+      "required": true,
+      "constraints": [
+        "pos_code_range"
+      ],
+      "transform": "state_code_prefix",
+      "description": "Place of supply as originally reported, given as 'NN-Name'; only the numeric prefix is kept. Unlike most sections this may equal the supplier's own state: that is exactly what selects the central/state split."
+    },
+    {
+      "id": "diff_percent",
+      "column": "Applicable % of Tax Rate",
+      "order": 3,
+      "type": "decimal",
+      "required": false,
+      "default": 100,
+      "enum": [
+        100,
+        65
+      ],
+      "transform": "percent_to_factor",
+      "description": "Proportion of the tax rate that applies. Blank means the full rate: the reference writes 100 into the row before mapping it. Emitted as a factor, and only when it is 0.65."
+    },
+    {
+      "id": "rt",
+      "column": "Rate",
+      "order": 4,
+      "type": "decimal",
+      "required": true,
+      "enum_ref": "../masters/tax-rates.json#/item",
+      "description": "Combined tax rate for this line, in percent. One row per rate."
+    },
+    {
+      "id": "ad_amt",
+      "column": "Gross Advance Received",
+      "order": 5,
+      "type": "decimal",
+      "required": true,
+      "pattern": "^-?(\\d{0,11})(\\.\\d{0,2})?$",
+      "description": "Gross advance received in this period at this rate. May be negative, and must not be zero."
+    },
+    {
+      "id": "csamt",
+      "column": "Cess Amount",
+      "order": 6,
+      "type": "decimal",
+      "required": false,
+      "pattern": "^-?(\\d{0,11})(\\.\\d{0,2})?$",
+      "default": 0,
+      "description": "Cess on this line. The reference writes 0 into a blank cell before mapping it, so a blank is emitted as 0."
+    }
+  ],
+  "rules": [
+    {
+      "id": "ata.advance_must_not_be_zero",
+      "description": "The reference rejects a zero advance outright; a row with nothing to report simply should not be present.",
+      "assert": {
+        "field": "ad_amt",
+        "ne": 0
+      },
+      "message": "Gross advance must not be zero \u2014 remove the row instead."
+    },
+    {
+      "id": "ata.cess_sign_follows_the_advance",
+      "description": "A cess may not contradict the advance it is charged on: both positive, both negative, or the cess zero.",
+      "assert": {
+        "field": "csamt",
+        "sign_agrees_with": "ad_amt"
+      },
+      "message": "Cess Amount must have the same sign as the advance (or be zero)."
+    }
+  ],
+  "grouping": {
+    "invoice_key": [
+      "pos"
+    ],
+    "item_key": [
+      "rt"
+    ],
+    "item_conflict": "last_wins",
+    "invoice_field_conflict": "error",
+    "agree_fields": [
+      "fy",
+      "omonth"
+    ]
+  },
+  "output": {
+    "invoice": {
+      "keys": [
+        {
+          "key": "omon",
+          "from": "derive:gstr1.original_period",
+          "description": "The MMYYYY period being amended, from the financial year and spelled-out month."
+        },
+        {
+          "key": "pos",
+          "from": "field:pos",
+          "description": "Two-digit state code."
+        },
+        {
+          "key": "sply_ty",
+          "from": "derive:gstr1.supply_type",
+          "description": "'INTRA' or 'INTER', decided by the place of supply against the filer's own state. Both branches are reachable in this section."
+        },
+        {
+          "key": "diff_percent",
+          "from": "field:diff_percent",
+          "only_when_value": 0.65,
+          "description": "Proportion of the tax rate that applies, as a factor. Emitted only when it is 0.65; the reference deletes it when it is 1 or falsy."
+        },
+        {
+          "key": "itms",
+          "from": "nested:item"
+        }
+      ]
+    },
+    "item": {
+      "keys": [
+        {
+          "key": "rt",
+          "from": "field:rt"
+        },
+        {
+          "key": "ad_amt",
+          "from": "field:ad_amt"
+        },
+        {
+          "key": "iamt",
+          "from": "derive:gstr1.tax_split_advance",
+          "description": "Integrated tax, present only for an inter-state advance.",
+          "omit_when_empty": true
+        },
+        {
+          "key": "camt",
+          "from": "derive:gstr1.tax_split_advance",
+          "description": "Central tax, present only for an intra-state advance.",
+          "omit_when_empty": true
+        },
+        {
+          "key": "samt",
+          "from": "derive:gstr1.tax_split_advance",
+          "description": "State tax, present only for an intra-state advance.",
+          "omit_when_empty": true
+        },
+        {
+          "key": "csamt",
+          "from": "derive:gstr1.tax_split_advance",
+          "description": "Cess. Always present: a blank cell was defaulted to 0 before mapping."
+        }
+      ]
+    },
+    "derivations": [
+      "gstr1.original_period",
+      "gstr1.supply_type",
+      "gstr1.tax_split_advance"
+    ],
+    "derivation_notes": {
+      "gstr1.original_period": "omon = the MMYYYY period named by the financial year and the spelled-out original month.",
+      "gstr1.supply_type": "'INTRA' when the place of supply equals the supplier's own state and the supplier is not an SEZ unit, otherwise 'INTER'.",
+      "gstr1.tax_split_advance": "Computed on the advance rather than a taxable value. Intra-state: camt = samt = round(ad_amt * rt * 0.005 * diff_percent, 2), with no iamt. Inter-state: iamt = round(ad_amt * rt * 0.01 * diff_percent, 2), with no camt or samt. csamt = round(Cess Amount, 2), a blank having already been defaulted to 0."
+    }
+  },
+  "notes": [
+    {
+      "kind": "quirk",
+      "text": "Line items here are BARE: no `num` and no `itm_det` wrapper, so the rate and amounts sit directly on the item object. The amount is `ad_amt`, not `txval` \u2014 these tables carry advances rather than invoice values.",
+      "affects": [
+        "output.item"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "Records sit at the top level of the section array with no envelope: there is no counterparty, so the place of supply is both the grouping key and a payload field. Rows sharing a place of supply merge into one record with one line item per rate.",
+      "affects": [
+        "output"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "Unlike the B2C(Large) and export tables, BOTH the central/state and the integrated branch are reachable here. Nothing rejects a place of supply equal to the supplier's own state \u2014 that is precisely the case that produces camt and samt instead of iamt.",
+      "affects": [
+        "pos",
+        "output.item"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "'Applicable % of Tax Rate' is checked against the pattern ^(100|65)$ as a string, so a CSV carrying '65.00' fails while an Excel cell holding the number 65 passes, because the numeric cell stringifies to '65'. GSTN's own sample CSV for these tables writes 65.00 and would be rejected on that path. This implementation compares numerically, so both forms are accepted \u2014 a deliberate divergence toward the Excel behaviour.",
+      "affects": [
+        "diff_percent"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "Validation MUTATES the row before the payload mapping runs: a blank 'Applicable % of Tax Rate' is written as 100. The mapping then sees the key present, so diff_percent becomes 1 \u2014 which the envelope step deletes, leaving no key. The net effect is invisible, but it is the reason a blank cell does not produce diff_percent 0.",
+      "affects": [
+        "diff_percent"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "Amounts here may be NEGATIVE, and the reference additionally requires the cess to agree in sign with the advance. Both are unusual: most sections' amount patterns are unsigned and no other section compares the signs of two columns.",
+      "affects": [
+        "ad_amt",
+        "csamt"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "There is no revised place of supply: the table amends the amounts reported for a state and period, not the state itself. The original place of supply is the grouping key, the payload's pos, and the input to the tax split.",
+      "affects": [
+        "pos"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "Rows are grouped by place of supply alone, yet the reference also requires the original period and the tax-rate factor to agree within a group. Two rows amending different months for the same state are therefore rejected rather than kept apart, so one return cannot amend two periods for one state through this table.",
+      "affects": [
+        "pos",
+        "omonth"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "The amended period reaches the payload as a derived value (omon) rather than a column of its own, so the columns it is derived from \u2014 Financial Year and Original Month \u2014 have to be declared as fields that must agree within a group even though neither is emitted. Without that, two rows amending different months for one state would silently merge into whichever month came first.",
+      "affects": [
+        "fy",
+        "omonth"
+      ]
+    }
+  ]
+}

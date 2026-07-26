@@ -79,6 +79,17 @@ From the second capture, which added the import and mapping steps:
   grouping by export type, the bare line-item shape with no `num` and no
   `itm_det`, and `WOPAY` zeroing both the tax and the cess.
 
+From a fourth capture, adding the four advances tables:
+
+- **The adjustment tables are RENAMED in the upload file.** `atadj` becomes
+  `txpd` and `atadja` becomes `txpda`. Because the rename is a plain assignment
+  of a key the working-file template never declared, the two renamed sections
+  are appended AFTER every other section — past `hsn` and the e-commerce blocks
+  — instead of keeping their original position. The originals are set to `[]`
+  and then dropped by omit-empty. The working-file template gives both the wrong
+  key names and the wrong position, so nothing short of a capture would have
+  caught this.
+
 From a third capture, of a workbook with only one HSN half populated:
 
 - **Omit-empty is recursive.** A nested object drops its empty members rather

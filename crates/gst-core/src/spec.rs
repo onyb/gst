@@ -205,6 +205,13 @@ pub enum Predicate {
         field: String,
         other: String,
     },
+    /// Field-to-field sign agreement: both positive, both negative, or either
+    /// one zero. The reference uses this to keep a cess from contradicting the
+    /// amount it is charged on.
+    SignAgreesWith {
+        field: String,
+        other: String,
+    },
     All(Vec<Predicate>),
     Any(Vec<Predicate>),
     Not(Box<Predicate>),
@@ -221,6 +228,7 @@ pub struct RawPredicate {
     in_: Option<Vec<SpecValue>>,
     empty: Option<bool>,
     gte_field: Option<String>,
+    sign_agrees_with: Option<String>,
     all: Option<Vec<RawPredicate>>,
     any: Option<Vec<RawPredicate>>,
     not: Option<Box<RawPredicate>>,
@@ -242,14 +250,24 @@ impl TryFrom<RawPredicate> for Predicate {
         let field = raw
             .field
             .ok_or("predicate has no `field` and is not all/any/not")?;
-        match (raw.eq, raw.ne, raw.in_, raw.empty, raw.gte_field) {
-            (Some(value), None, None, None, None) => Ok(Predicate::Eq { field, value }),
-            (None, Some(value), None, None, None) => Ok(Predicate::Ne { field, value }),
-            (None, None, Some(values), None, None) => Ok(Predicate::In { field, values }),
-            (None, None, None, Some(empty), None) => Ok(Predicate::Empty { field, empty }),
-            (None, None, None, None, Some(other)) => Ok(Predicate::GteField { field, other }),
+        match (
+            raw.eq,
+            raw.ne,
+            raw.in_,
+            raw.empty,
+            raw.gte_field,
+            raw.sign_agrees_with,
+        ) {
+            (Some(value), None, None, None, None, None) => Ok(Predicate::Eq { field, value }),
+            (None, Some(value), None, None, None, None) => Ok(Predicate::Ne { field, value }),
+            (None, None, Some(values), None, None, None) => Ok(Predicate::In { field, values }),
+            (None, None, None, Some(empty), None, None) => Ok(Predicate::Empty { field, empty }),
+            (None, None, None, None, Some(other), None) => Ok(Predicate::GteField { field, other }),
+            (None, None, None, None, None, Some(other)) => {
+                Ok(Predicate::SignAgreesWith { field, other })
+            }
             _ => Err(format!(
-                "predicate on `{field}` must have exactly one of eq/ne/in/empty/gte_field"
+                "predicate on `{field}` must have exactly one of eq/ne/in/empty/gte_field/sign_agrees_with"
             )),
         }
     }
@@ -525,6 +543,10 @@ embedded_section!(GSTR1_CDNUR, "gstr1/cdnur.json");
 embedded_section!(GSTR1_CDNURA, "gstr1/cdnura.json");
 embedded_section!(GSTR1_EXP, "gstr1/exp.json");
 embedded_section!(GSTR1_EXPA, "gstr1/expa.json");
+embedded_section!(GSTR1_AT, "gstr1/at.json");
+embedded_section!(GSTR1_ATA, "gstr1/ata.json");
+embedded_section!(GSTR1_ATADJ, "gstr1/atadj.json");
+embedded_section!(GSTR1_ATADJA, "gstr1/atadja.json");
 embedded_section!(GSTR1_NIL, "gstr1/exemp.json");
 embedded_section!(GSTR1_DOC_ISSUE, "gstr1/docs.json");
 embedded_section!(GSTR1_HSN_B2B, "gstr1/hsn-b2b.json");
@@ -545,6 +567,10 @@ pub fn sections() -> Vec<&'static SectionSpec> {
         &GSTR1_CDNURA,
         &GSTR1_EXP,
         &GSTR1_EXPA,
+        &GSTR1_AT,
+        &GSTR1_ATA,
+        &GSTR1_ATADJ,
+        &GSTR1_ATADJA,
         &GSTR1_NIL,
         &GSTR1_DOC_ISSUE,
         &GSTR1_HSN_B2B,
@@ -751,8 +777,7 @@ mod tests {
         assert!(section("b2ba").is_some());
         assert!(section("cdnr").is_some());
         assert!(section("exp").is_some());
-        // Advances are still unwritten, so a good stand-in for an unknown code.
-        assert!(section("at").is_none());
+        assert!(section("at").is_some());
         assert!(section("nonsense").is_none());
         assert_eq!(
             section_codes(),
@@ -769,6 +794,10 @@ mod tests {
                 "cdnura",
                 "exp",
                 "expa",
+                "at",
+                "ata",
+                "atadj",
+                "atadja",
                 "nil",
                 "doc_issue",
                 "hsn(b2b)",

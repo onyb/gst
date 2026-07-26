@@ -514,6 +514,35 @@ pub fn tax_split_by_pos(record: &Record, ctx: &FilingContext) -> TaxSplit {
     }
 }
 
+/// Tax on an advance received or adjusted.
+///
+/// Same central/state-versus-integrated choice as [`tax_split_by_pos`], but
+/// computed on the advance (`ad_amt`) rather than a taxable value, because
+/// these tables carry no invoice.
+pub fn tax_split_advance(record: &Record, ctx: &FilingContext) -> TaxSplit {
+    let advance = record.number("ad_amt").unwrap_or_default();
+    let rate = record.number("rt").unwrap_or_default();
+    let factor = record.number("diff_percent").unwrap_or(Decimal::ONE);
+    let cess = round2(record.number("csamt").unwrap_or_default());
+
+    if is_intra_state_by_pos(record, ctx) {
+        let half = round2(advance * rate * HALF_RATE * factor);
+        TaxSplit {
+            iamt: None,
+            camt: Some(half),
+            samt: Some(half),
+            csamt: cess,
+        }
+    } else {
+        TaxSplit {
+            iamt: Some(round2(advance * rate * FULL_RATE * factor)),
+            camt: None,
+            samt: None,
+            csamt: cess,
+        }
+    }
+}
+
 /// Tax for a note issued to an unregistered person.
 ///
 /// Always inter-state: the reference has no central/state branch for these at
@@ -676,10 +705,12 @@ fn derive(
         "gstr1.tax_split"
         | "gstr1.tax_split_by_pos"
         | "gstr1.tax_split_unregistered"
-        | "gstr1.tax_export" => {
+        | "gstr1.tax_export"
+        | "gstr1.tax_split_advance" => {
             let split = match name {
                 "gstr1.tax_split_by_pos" => tax_split_by_pos(record, ctx),
                 "gstr1.tax_export" => tax_export(record, ctx),
+                "gstr1.tax_split_advance" => tax_split_advance(record, ctx),
                 "gstr1.tax_split_unregistered" => tax_split_unregistered(record, ctx),
                 _ => tax_split(record, ctx),
             };
@@ -736,6 +767,7 @@ pub fn unimplemented_derivations(spec: &SectionSpec) -> Vec<&str> {
         "gstr1.tax_split_by_pos",
         "gstr1.tax_split_unregistered",
         "gstr1.tax_export",
+        "gstr1.tax_split_advance",
         "gstr1.supply_type",
         "gstr1.cess",
         "gstr1.cess_unguarded",

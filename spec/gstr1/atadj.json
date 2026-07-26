@@ -1,0 +1,230 @@
+{
+  "$schema": "../section.schema.json",
+  "section": "atadj",
+  "return": "gstr1",
+  "title": "Advance Adjusted - 11B(1), 11B(2)",
+  "provenance": {
+    "offline_tool": "V3.2.4",
+    "excel_template": "GSTR1_Excel_Workbook_Template_V2.2.xlsx",
+    "csv_template": "Section_wise_CSV_files/GSTR1/atadj.csv",
+    "verified_on": "2026-07-26"
+  },
+  "source": {
+    "excel": {
+      "sheet": "atadj",
+      "header_row": 4,
+      "first_data_row": 5
+    },
+    "csv": {
+      "file": "atadj.csv",
+      "header_row": 1
+    }
+  },
+  "fields": [
+    {
+      "id": "pos",
+      "column": "Place Of Supply",
+      "order": 0,
+      "type": "state_code",
+      "required": true,
+      "constraints": [
+        "pos_code_range"
+      ],
+      "transform": "state_code_prefix",
+      "description": "Place of supply as 'NN-Name'; only the numeric prefix is kept. Unlike most sections this may equal the supplier's own state: that is exactly what selects the central/state split."
+    },
+    {
+      "id": "diff_percent",
+      "column": "Applicable % of Tax Rate",
+      "order": 1,
+      "type": "decimal",
+      "required": false,
+      "default": 100,
+      "enum": [
+        100,
+        65
+      ],
+      "transform": "percent_to_factor",
+      "description": "Proportion of the tax rate that applies. Blank means the full rate: the reference writes 100 into the row before mapping it. Emitted as a factor, and only when it is 0.65."
+    },
+    {
+      "id": "rt",
+      "column": "Rate",
+      "order": 2,
+      "type": "decimal",
+      "required": true,
+      "enum_ref": "../masters/tax-rates.json#/item",
+      "description": "Combined tax rate for this line, in percent. One row per rate."
+    },
+    {
+      "id": "ad_amt",
+      "column": "Gross Advance Adjusted",
+      "order": 3,
+      "type": "decimal",
+      "required": true,
+      "pattern": "^(\\d{0,11})(\\.\\d{0,2})?$",
+      "description": "Total advance adjusted against invoices in this period, at this rate. Must be non-negative."
+    },
+    {
+      "id": "csamt",
+      "column": "Cess Amount",
+      "order": 4,
+      "type": "decimal",
+      "required": false,
+      "pattern": "^(\\d{0,11})(\\.\\d{0,2})?$",
+      "description": "Cess on this line. A blank produces no csamt key at all \u2014 the reference has no empty-cell guard here, so a blank becomes NaN and omit-empty drops it. See the quirk note."
+    }
+  ],
+  "rules": [],
+  "grouping": {
+    "invoice_key": [
+      "pos"
+    ],
+    "item_key": [
+      "rt"
+    ],
+    "item_conflict": "last_wins",
+    "invoice_field_conflict": "error"
+  },
+  "output": {
+    "invoice": {
+      "keys": [
+        {
+          "key": "pos",
+          "from": "field:pos",
+          "description": "Two-digit state code."
+        },
+        {
+          "key": "sply_ty",
+          "from": "derive:gstr1.supply_type",
+          "description": "'INTRA' or 'INTER', decided by the place of supply against the filer's own state. Both branches are reachable in this section."
+        },
+        {
+          "key": "diff_percent",
+          "from": "field:diff_percent",
+          "only_when_value": 0.65,
+          "description": "Proportion of the tax rate that applies, as a factor. Emitted only when it is 0.65; the reference deletes it when it is 1 or falsy."
+        },
+        {
+          "key": "itms",
+          "from": "nested:item"
+        }
+      ]
+    },
+    "item": {
+      "keys": [
+        {
+          "key": "rt",
+          "from": "field:rt"
+        },
+        {
+          "key": "ad_amt",
+          "from": "field:ad_amt"
+        },
+        {
+          "key": "iamt",
+          "from": "derive:gstr1.tax_split_advance",
+          "description": "Integrated tax, present only for an inter-state advance.",
+          "omit_when_empty": true
+        },
+        {
+          "key": "camt",
+          "from": "derive:gstr1.tax_split_advance",
+          "description": "Central tax, present only for an intra-state advance.",
+          "omit_when_empty": true
+        },
+        {
+          "key": "samt",
+          "from": "derive:gstr1.tax_split_advance",
+          "description": "State tax, present only for an intra-state advance.",
+          "omit_when_empty": true
+        },
+        {
+          "key": "csamt",
+          "from": "derive:gstr1.cess_unguarded",
+          "omit_when_empty": true,
+          "description": "Cess. Absent entirely when the source cell is blank."
+        }
+      ]
+    },
+    "derivations": [
+      "gstr1.supply_type",
+      "gstr1.tax_split_advance",
+      "gstr1.cess_unguarded"
+    ],
+    "derivation_notes": {
+      "gstr1.supply_type": "'INTRA' when the place of supply equals the supplier's own state and the supplier is not an SEZ unit, otherwise 'INTER'.",
+      "gstr1.tax_split_advance": "Computed on the advance rather than a taxable value. Intra-state: camt = samt = round(ad_amt * rt * 0.005 * diff_percent, 2), with no iamt. Inter-state: iamt = round(ad_amt * rt * 0.01 * diff_percent, 2), with no camt or samt. csamt is supplied by the unguarded cess derivation instead, so a blank cell yields no key.",
+      "gstr1.cess_unguarded": "csamt = round(Cess Amount, 2) when the cell has a value, and no key at all when it is blank."
+    }
+  },
+  "notes": [
+    {
+      "kind": "quirk",
+      "text": "Line items here are BARE: no `num` and no `itm_det` wrapper, so the rate and amounts sit directly on the item object. The amount is `ad_amt`, not `txval` \u2014 these tables carry advances rather than invoice values.",
+      "affects": [
+        "output.item"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "Records sit at the top level of the section array with no envelope: there is no counterparty, so the place of supply is both the grouping key and a payload field. Rows sharing a place of supply merge into one record with one line item per rate.",
+      "affects": [
+        "output"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "Unlike the B2C(Large) and export tables, BOTH the central/state and the integrated branch are reachable here. Nothing rejects a place of supply equal to the supplier's own state \u2014 that is precisely the case that produces camt and samt instead of iamt.",
+      "affects": [
+        "pos",
+        "output.item"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "'Applicable % of Tax Rate' is checked against the pattern ^(100|65)$ as a string, so a CSV carrying '65.00' fails while an Excel cell holding the number 65 passes, because the numeric cell stringifies to '65'. GSTN's own sample CSV for these tables writes 65.00 and would be rejected on that path. This implementation compares numerically, so both forms are accepted \u2014 a deliberate divergence toward the Excel behaviour.",
+      "affects": [
+        "diff_percent"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "Validation MUTATES the row before the payload mapping runs: a blank 'Applicable % of Tax Rate' is written as 100. The mapping then sees the key present, so diff_percent becomes 1 \u2014 which the envelope step deletes, leaving no key. The net effect is invisible, but it is the reason a blank cell does not produce diff_percent 0.",
+      "affects": [
+        "diff_percent"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "The Excel template and the section CSV disagree on column order: the sheet reads Applicable % of Tax Rate then Rate, while the CSV reads Rate then Applicable % of Tax Rate. The `order` recorded here follows the Excel template. Import matches on header text rather than position, so both files read correctly regardless.",
+      "affects": [
+        "diff_percent",
+        "rt"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "A blank Cess Amount produces NO csamt key. Validation defaults a blank cess to 0 for the advance-received tables but NOT for the adjustment tables, so here a blank stays blank, becomes NaN in the mapping, and is dropped by omit-empty. The two halves of the advances family genuinely differ on this.",
+      "affects": [
+        "csamt"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "Amounts in the adjustment tables are UNSIGNED \u2014 the pattern carries no leading minus, unlike the advance-received tables, and there is no zero check either. A zero adjustment imports cleanly here while a zero advance does not.",
+      "affects": [
+        "ad_amt",
+        "csamt"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "GSTN's shipped sample CSV for this table sets Gross Advance Received to 0.00, which the tool's own validation rejects outright, and writes the tax-rate factor as 65.00, which its string pattern also rejects. Layout reference only, not a positive fixture.",
+      "affects": [
+        "ad_amt",
+        "diff_percent"
+      ]
+    }
+  ]
+}

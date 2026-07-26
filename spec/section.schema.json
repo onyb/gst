@@ -331,6 +331,10 @@
           "description": "Field id this field must be numerically greater than or equal to. The only field-to-field comparison the language allows; a non-numeric side is treated as satisfied, since field-level validation already rejects it.",
           "type": "string"
         },
+        "sign_agrees_with": {
+          "description": "Field id whose sign this field must share: both positive, both negative, or either one zero. A non-numeric side is treated as satisfied, since field-level validation already rejects it.",
+          "type": "string"
+        },
         "all": {
           "description": "Conjunction.",
           "type": "array",
@@ -349,6 +353,7 @@
         { "required": ["field", "in"] },
         { "required": ["field", "empty"] },
         { "required": ["field", "gte_field"] },
+        { "required": ["field", "sign_agrees_with"] },
         { "required": ["all"] },
         { "required": ["any"] },
         { "required": ["not"] }

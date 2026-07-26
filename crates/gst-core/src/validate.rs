@@ -504,6 +504,13 @@ pub fn evaluate(predicate: &Predicate, record: &Record) -> bool {
                 _ => true,
             }
         }
+        Predicate::SignAgreesWith { field, other } => {
+            match (record.number(field), record.number(other)) {
+                // Zero agrees with anything; otherwise the signs must match.
+                (Some(a), Some(b)) => a.is_zero() || b.is_zero() || a.is_sign_negative() == b.is_sign_negative(),
+                _ => true,
+            }
+        }
         Predicate::All(preds) => preds.iter().all(|p| evaluate(p, record)),
         Predicate::Any(preds) => preds.iter().any(|p| evaluate(p, record)),
         Predicate::Not(pred) => !evaluate(pred, record),
