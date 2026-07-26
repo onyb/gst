@@ -50,13 +50,34 @@ struct EnvelopeGroup {
 /// Build the payload for a section from records that passed validation.
 pub fn generate(spec: &SectionSpec, records: &[Record], ctx: &FilingContext) -> Generated {
     let mut out = Generated::default();
+
+    // Flat sections have no invoice or item level: every validated row becomes
+    // one payload object, in row order, with its tax computed on the row.
+    if let Some(record_spec) = &spec.output.record {
+        for (index, record) in records.iter().enumerate() {
+            let json = build_object(record_spec, record, ctx, index, &mut out.findings);
+            out.envelopes.push(json);
+        }
+        return out;
+    }
+
     let mut envelopes: Vec<(String, EnvelopeGroup)> = Vec::new();
     let mut envelope_index: HashMap<String, usize> = HashMap::new();
 
     // Invoice-level fields are those the payload reads at the invoice or
     // envelope level. Rows sharing an invoice key must agree on all of them.
-    let invoice_fields = mapped_fields(&spec.output.invoice);
-    let envelope_fields = mapped_fields(&spec.output.envelope);
+    let invoice_fields = spec
+        .output
+        .invoice
+        .as_ref()
+        .map(mapped_fields)
+        .unwrap_or_default();
+    let envelope_fields = spec
+        .output
+        .envelope
+        .as_ref()
+        .map(mapped_fields)
+        .unwrap_or_default();
 
     for record in records {
         let env_key = group_key(spec, record, &spec.grouping.envelope_key);
@@ -238,7 +259,10 @@ fn build_envelope(
     findings: &mut Vec<Finding>,
 ) -> Json {
     let mut out = Json::obj();
-    for key in &spec.output.envelope.keys {
+    let Some(envelope_spec) = &spec.output.envelope else {
+        return out;
+    };
+    for key in &envelope_spec.keys {
         let value = match &key.from {
             Source::Field(id) => cell_json(&envelope.head, id),
             Source::Derive(name) => derive(name, leaf(&key.key), &envelope.head, ctx, 0, findings),
@@ -251,7 +275,7 @@ fn build_envelope(
             ),
             Source::Nested(Level::Item) => Json::Null,
         };
-        if key.omit_when_empty && value.is_empty() {
+        if omitted(key, &value) {
             continue;
         }
         out.insert_path(&key.key, value);
@@ -266,7 +290,10 @@ fn build_invoice(
     findings: &mut Vec<Finding>,
 ) -> Json {
     let mut out = Json::obj();
-    for key in &spec.output.invoice.keys {
+    let Some(invoice_spec) = &spec.output.invoice else {
+        return out;
+    };
+    for key in &invoice_spec.keys {
         let value = match &key.from {
             Source::Field(id) => cell_json(&invoice.head, id),
             Source::Derive(name) => derive(name, leaf(&key.key), &invoice.head, ctx, 0, findings),
@@ -280,7 +307,7 @@ fn build_invoice(
             ),
             Source::Nested(Level::Invoice) => Json::Null,
         };
-        if key.omit_when_empty && value.is_empty() {
+        if omitted(key, &value) {
             continue;
         }
         out.insert_path(&key.key, value);
@@ -305,12 +332,50 @@ fn build_item(
             Source::Derive(name) => derive(name, leaf(&key.key), record, ctx, index, findings),
             Source::Nested(_) => Json::Null,
         };
-        if key.omit_when_empty && value.is_empty() {
+        if omitted(key, &value) {
             continue;
         }
         out.insert_path(&key.key, value);
     }
     out
+}
+
+/// Build one flat payload object from a single row. Flat sections compute their
+/// tax on the row itself, so there is no item level to descend into.
+fn build_object(
+    object: &crate::spec::PayloadObject,
+    record: &Record,
+    ctx: &FilingContext,
+    index: usize,
+    findings: &mut Vec<Finding>,
+) -> Json {
+    let mut out = Json::obj();
+    for key in &object.keys {
+        let value = match &key.from {
+            Source::Field(id) => cell_json(record, id),
+            Source::Derive(name) => derive(name, leaf(&key.key), record, ctx, index, findings),
+            Source::Nested(_) => Json::Null,
+        };
+        if omitted(key, &value) {
+            continue;
+        }
+        out.insert_path(&key.key, value);
+    }
+    out
+}
+
+/// Whether a key is dropped rather than emitted: either because it is empty and
+/// declared omit-when-empty, or because it carries exactly the value the
+/// reference drops it at.
+fn omitted(key: &crate::spec::PayloadKey, value: &Json) -> bool {
+    if key.omit_when_empty && value.is_empty() {
+        return true;
+    }
+    match (&key.omit_when_value, value) {
+        (Some(spec_value), Json::Num(n)) => spec_value.matches_text(&n.normalize().to_string()),
+        (Some(spec_value), Json::Str(s)) => spec_value.matches_text(s),
+        _ => false,
+    }
 }
 
 /// The last segment of a dotted payload key — what a derivation switches on.
@@ -390,6 +455,41 @@ pub fn tax_split(record: &Record, ctx: &FilingContext) -> TaxSplit {
     }
 }
 
+/// Whether a line is intra-state judged on place of supply alone.
+///
+/// Sections without an invoice-type column (B2C small) use this: intra-state
+/// when the place of supply is the supplier's own state and the supplier is not
+/// an SEZ unit. Unlike [`is_intra_state`], no invoice type gates it, so both
+/// branches are genuinely reachable.
+pub fn is_intra_state_by_pos(record: &Record, ctx: &FilingContext) -> bool {
+    ctx.supplier_state() == Some(record.text("pos").as_str()) && !ctx.is_sez
+}
+
+/// Tax split for sections with no invoice-type column.
+pub fn tax_split_by_pos(record: &Record, ctx: &FilingContext) -> TaxSplit {
+    let txval = record.number("txval").unwrap_or_default();
+    let rate = record.number("rt").unwrap_or_default();
+    let factor = record.number("diff_percent").unwrap_or(Decimal::ONE);
+    let cess = round2(record.number("csamt").unwrap_or_default());
+
+    if is_intra_state_by_pos(record, ctx) {
+        let half = round2(txval * rate * HALF_RATE * factor);
+        TaxSplit {
+            iamt: None,
+            camt: Some(half),
+            samt: Some(half),
+            csamt: cess,
+        }
+    } else {
+        TaxSplit {
+            iamt: Some(round2(txval * rate * FULL_RATE * factor)),
+            camt: None,
+            samt: None,
+            csamt: cess,
+        }
+    }
+}
+
 /// Money rounds to two places, away from zero at the midpoint.
 fn round2(value: Decimal) -> Decimal {
     value.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero)
@@ -413,12 +513,26 @@ fn derive(
     match name {
         "gstr1.item_num" => Json::Num(item_num(record)),
         "gstr1.cess" => Json::Num(tax_split(record, ctx).csamt),
-        "gstr1.tax_split" => {
-            let split = tax_split(record, ctx);
+        // 'INTRA' or 'INTER', which flat sections carry as a field of their own.
+        "gstr1.supply_type" => Json::Str(
+            if is_intra_state_by_pos(record, ctx) {
+                "INTRA"
+            } else {
+                "INTER"
+            }
+            .to_owned(),
+        ),
+        "gstr1.tax_split" | "gstr1.tax_split_by_pos" => {
+            let split = if name == "gstr1.tax_split_by_pos" {
+                tax_split_by_pos(record, ctx)
+            } else {
+                tax_split(record, ctx)
+            };
             let amount = match leaf_key {
                 "iamt" => split.iamt,
                 "camt" => split.camt,
                 "samt" => split.samt,
+                "csamt" => Some(split.csamt),
                 other => {
                     findings.push(Finding {
                         sheet_row: record.sheet_row,
@@ -426,7 +540,9 @@ fn derive(
                         field: None,
                         rule: Some("output.unknown_tax_component".into()),
                         severity: Severity::Error,
-                        message: format!("spec maps '{other}' to gstr1.tax_split, which only provides iamt, camt and samt"),
+                        message: format!(
+                            "spec maps '{other}' to {name}, which only provides iamt, camt, samt and csamt"
+                        ),
                     });
                     None
                 }
@@ -454,7 +570,13 @@ fn derive(
 /// Confirm every derivation a spec names is implemented. Cheap guard against a
 /// spec file referring to a computation that does not exist.
 pub fn unimplemented_derivations(spec: &SectionSpec) -> Vec<&str> {
-    const KNOWN: &[&str] = &["gstr1.item_num", "gstr1.tax_split", "gstr1.cess"];
+    const KNOWN: &[&str] = &[
+        "gstr1.item_num",
+        "gstr1.tax_split",
+        "gstr1.tax_split_by_pos",
+        "gstr1.supply_type",
+        "gstr1.cess",
+    ];
     spec.output
         .derivations
         .iter()

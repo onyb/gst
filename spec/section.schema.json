@@ -105,7 +105,6 @@
       "description": "How validated rows collapse into records. Sections are row-per-tax-rate: several rows sharing an invoice key become one invoice with several line items.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["invoice_key"],
       "properties": {
         "envelope_key": {
           "description": "Field ids that group invoices into an outer payload object (e.g. one object per recipient GSTIN). Absent for flat sections.",
@@ -113,7 +112,7 @@
           "items": { "type": "string" }
         },
         "invoice_key": {
-          "description": "Field ids identifying one invoice/document within an envelope.",
+          "description": "Field ids identifying one invoice/document within an envelope. Omitted by flat sections, which have no invoice level — every validated row becomes its own payload object.",
           "type": "array",
           "minItems": 1,
           "items": { "type": "string" }
@@ -140,11 +139,18 @@
     },
 
     "output": {
-      "description": "Mapping onto the portal upload payload.",
+      "description": "Mapping onto the portal upload payload. A section is either nested (`envelope` + `invoice`, optionally `item`) or flat (`record` alone): flat sections emit one object per validated row, with tax computed on the row itself rather than in a line item.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["envelope", "invoice"],
+      "anyOf": [
+        { "required": ["record"] },
+        { "required": ["envelope", "invoice"] }
+      ],
       "properties": {
+        "record": {
+          "description": "Flat sections only: maps one validated row to one payload object. Mutually exclusive with envelope/invoice/item.",
+          "$ref": "#/$defs/payload_object"
+        },
         "envelope": { "$ref": "#/$defs/payload_object" },
         "invoice": { "$ref": "#/$defs/payload_object" },
         "item": { "$ref": "#/$defs/payload_object" },
@@ -363,6 +369,9 @@
                 "description": "Key is left out entirely rather than emitted as null or empty string.",
                 "type": "boolean",
                 "default": false
+              },
+              "omit_when_value": {
+                "description": "Key is left out when it would carry exactly this value. Covers keys the reference drops at a default rather than at empty, e.g. an unscaled tax-rate factor of 1."
               },
               "verify": {
                 "description": "Marks a key whose presence or exact form is not yet confirmed. `oracle`: must be settled by differential capture against the official tool before this section is trusted.",

@@ -307,6 +307,8 @@ pub enum InvoiceFieldConflict {
 pub struct Grouping {
     #[serde(default)]
     pub envelope_key: Vec<String>,
+    /// Empty for flat sections, which have no invoice level.
+    #[serde(default)]
     pub invoice_key: Vec<String>,
     #[serde(default)]
     pub invoice_key_case_insensitive: bool,
@@ -360,6 +362,9 @@ pub struct PayloadKey {
     pub from: Source,
     #[serde(default)]
     pub omit_when_empty: bool,
+    /// Dropped when the value would be exactly this — for keys the reference
+    /// omits at a default rather than at empty.
+    pub omit_when_value: Option<SpecValue>,
     pub verify: Option<Verify>,
     pub description: Option<String>,
 }
@@ -371,8 +376,11 @@ pub struct PayloadObject {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Output {
-    pub envelope: PayloadObject,
-    pub invoice: PayloadObject,
+    /// Flat sections: one payload object per validated row. When present, the
+    /// nested levels below are absent.
+    pub record: Option<PayloadObject>,
+    pub envelope: Option<PayloadObject>,
+    pub invoice: Option<PayloadObject>,
     pub item: Option<PayloadObject>,
     #[serde(default)]
     pub derivations: Vec<String>,
@@ -458,12 +466,19 @@ impl SectionSpec {
         fields.iter().map(|f| f.column.as_str()).collect()
     }
 
+    /// Whether this section emits one flat object per row rather than a
+    /// nested envelope/invoice/item structure.
+    pub fn is_flat(&self) -> bool {
+        self.output.record.is_some()
+    }
+
     /// Payload keys still awaiting differential capture. A section with any of
     /// these is not yet trustworthy for real filing.
     pub fn unverified_keys(&self) -> Vec<&str> {
         let objects = [
-            Some(&self.output.envelope),
-            Some(&self.output.invoice),
+            self.output.record.as_ref(),
+            self.output.envelope.as_ref(),
+            self.output.invoice.as_ref(),
             self.output.item.as_ref(),
         ];
         objects
@@ -492,7 +507,12 @@ embedded_section!(GSTR1_B2CLA, "gstr1/b2cla.json");
 
 /// Every section the engine knows, in the order a return reports them.
 pub fn sections() -> Vec<&'static SectionSpec> {
-    vec![&GSTR1_B2B, &GSTR1_B2BA, &GSTR1_B2CL, &GSTR1_B2CLA]
+    vec![
+        &GSTR1_B2B,
+        &GSTR1_B2BA,
+        &GSTR1_B2CL,
+        &GSTR1_B2CLA,
+    ]
 }
 
 /// Look up a section by its code, e.g. `b2b`.
