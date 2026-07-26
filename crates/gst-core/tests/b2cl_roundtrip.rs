@@ -85,7 +85,7 @@ fn every_derivation_the_spec_names_is_implemented() {
 fn the_payload_groups_by_place_of_supply_not_recipient() {
     assert_eq!(
         payload(&[base(5)], &ctx(7, 2017)),
-        r#"[{"pos":"37","inv":[{"inum":"INV-L001","idt":"14-07-2017","val":295000,"itms":[{"num":1801,"itm_det":{"txval":250000,"rt":18,"iamt":45000,"csamt":0}}]}]}]"#
+        r#"[{"pos":"37","inv":[{"inum":"INV-L001","idt":"14-07-2017","val":295000,"itms":[{"num":1801,"itm_det":{"txval":250000,"rt":18,"iamt":45000}}]}]}]"#
     );
 }
 
@@ -198,12 +198,17 @@ fn tax_is_always_integrated_never_split() {
 }
 
 #[test]
-fn a_blank_cess_is_zero_not_null() {
-    // Deliberate divergence: the reference omits the empty-cell guard it uses
-    // in B2B, producing NaN which serializes as null.
+fn a_blank_cess_emits_no_csamt_key_at_all() {
+    // Verified against a file captured from the tool: these two tables compute
+    // cess without the empty-cell guard the B2B tables use, so a blank cell
+    // becomes NaN, the working file records null, and omit-empty drops the key.
     let json = payload(&[base(5)], &ctx(7, 2017));
-    assert!(json.contains(r#""csamt":0"#), "{json}");
+    assert!(!json.contains("csamt"), "{json}");
     assert!(!json.contains("null"), "{json}");
+
+    // An explicit 0 in the cell is a real zero and is emitted.
+    let json = payload(&[with(5, "Cess Amount", "0")], &ctx(7, 2017));
+    assert!(json.contains(r#""csamt":0"#), "{json}");
 }
 
 #[test]

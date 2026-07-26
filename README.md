@@ -17,12 +17,13 @@ tool itself.
 
 **The output is byte-identical to the official tool's.**
 [`fixtures/golden/`](fixtures/golden/) holds a file captured by running GSTN's
-own tool, and a test asserts we reproduce it byte for byte — same 13 sections,
-same key order, same filename. That comparison is what turns "we read their
-code carefully" into something checkable, and it earned its keep immediately:
-the first run of it corrected four things the source alone had told us wrong,
-including that empty sections are omitted rather than emitted as `[]`, and that
-the recipient's name is stripped before upload.
+own tool over the same workbook, and a test asserts we reproduce it byte for
+byte — same 13 sections, same key order, same filename. That comparison is what
+turns "we read their code carefully" into something checkable, and it keeps
+earning its keep: it has so far corrected five things the source alone had told
+us wrong, including that empty sections are omitted rather than emitted as
+`[]`, that the recipient's name is stripped before upload, and that a blank cess
+amount in the B2C(Large) tables produces no key at all rather than a zero.
 
 So the spec is the product as much as the CLI: an independent, testable
 description of the GST return formats that anyone can build on.
@@ -79,7 +80,10 @@ worksheets are implemented, including both tables every filer must submit
 
 Output is **verified byte-for-byte against GSTN's own tool** for a 13-section
 return — see [`fixtures/golden/`](fixtures/golden/) and
-`crates/gst-core/tests/golden_reference.rs`.
+`crates/gst-core/tests/golden_reference.rs`. The captured file is produced by
+driving the official tool's whole pipeline, from importing the workbook through
+to writing the upload file, so the row-to-payload mapping is compared and not
+just the final packaging.
 
 Two honest bounds on that claim: the comparison covers one captured period with
 these 13 sections, so a section added later is unverified until a new file is

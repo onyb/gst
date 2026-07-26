@@ -542,6 +542,20 @@ pub fn tax_split_unregistered(record: &Record, _ctx: &FilingContext) -> TaxSplit
     }
 }
 
+/// Cess for the two B2C(Large) tables, which compute it without the empty-cell
+/// guard every other section uses.
+///
+/// A blank cell there yields NaN rather than zero, which the reference's working
+/// file writes as `null` and the upload step's omit-empty then drops — so the
+/// key is simply absent. An explicit `0` in the cell is a real zero and is
+/// emitted. Confirmed against a file captured from the tool.
+pub fn cess_unguarded(record: &Record) -> Json {
+    if record.text("csamt").trim().is_empty() {
+        return Json::Null;
+    }
+    Json::Num(round2(record.number("csamt").unwrap_or_default()))
+}
+
 /// Money rounds to two places, away from zero at the midpoint.
 fn round2(value: Decimal) -> Decimal {
     value.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero)
@@ -565,6 +579,7 @@ fn derive(
     match name {
         "gstr1.item_num" => Json::Num(item_num(record)),
         "gstr1.cess" => Json::Num(tax_split(record, ctx).csamt),
+        "gstr1.cess_unguarded" => cess_unguarded(record),
         // The official description for the row's HSN code, looked up rather
         // than entered — the template has no column for it.
         "gstr1.hsn_description" => match crate::masters::hsn_description(&record.text("hsn_sc")) {
@@ -692,6 +707,7 @@ pub fn unimplemented_derivations(spec: &SectionSpec) -> Vec<&str> {
         "gstr1.tax_split_unregistered",
         "gstr1.supply_type",
         "gstr1.cess",
+        "gstr1.cess_unguarded",
     ];
     spec.output
         .derivations

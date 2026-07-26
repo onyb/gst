@@ -120,9 +120,8 @@
       "order": 7,
       "type": "decimal",
       "required": false,
-      "default": 0,
       "pattern": "^(\\d{0,11})(\\.\\d{0,2})?$",
-      "description": "Cess payable on this line. Blank is treated as 0 here \u2014 see the divergence note."
+      "description": "Cess payable on this line. A blank cell produces no csamt key in the payload rather than a zero \u2014 see the quirk note."
     },
     {
       "id": "etin",
@@ -231,19 +230,21 @@
         },
         {
           "key": "itm_det.csamt",
-          "from": "derive:gstr1.cess"
+          "from": "derive:gstr1.cess_unguarded",
+          "omit_when_empty": true,
+          "description": "Cess. Absent entirely when the source cell is blank \u2014 see the quirk note."
         }
       ]
     },
     "derivations": [
       "gstr1.item_num",
       "gstr1.tax_split",
-      "gstr1.cess"
+      "gstr1.cess_unguarded"
     ],
     "derivation_notes": {
       "gstr1.item_num": "Line item number is derived from the rate, not a sequence: num = rt * 100 + 1.",
       "gstr1.tax_split": "Always resolves to inter-state for this section: iamt = round(txval * rt * 0.01 * diff_percent, 2). The shared derivation reaches that outcome because the section has no invoice-type field, and the pos_differs_from_supplier_state constraint guarantees the place of supply is never the supplier's own state.",
-      "gstr1.cess": "csamt = round(Cess Amount, 2), or 0 when blank."
+      "gstr1.cess_unguarded": "csamt = round(Cess Amount, 2) when the cell has a value, and no key at all when it is blank. Unlike the shared cess derivation, there is no empty-cell guard here, which is what makes the key vanish rather than read 0."
     }
   },
   "notes": [
@@ -252,13 +253,6 @@
       "text": "The central/state tax branch of the reference's item mapping is unreachable for this section. It is guarded by 'place of supply equals the supplier's state AND the supplier is not an SEZ unit', but a non-SEZ row with a matching state is rejected before it gets there, and an SEZ supplier fails the second half of the guard. Every line therefore carries integrated tax, and camt/samt are deliberately absent from the payload mapping above.",
       "affects": [
         "output.item"
-      ]
-    },
-    {
-      "kind": "divergence",
-      "text": "A blank Cess Amount is emitted as 0 here. The reference computes it without the empty-cell guard it uses in the B2B section, so a blank cell becomes NaN and serializes as null. Emitting null for a numeric tax field looks like a defect rather than an interface, so this implementation matches the B2B behavior instead. Needs differential capture to confirm what the portal actually receives.",
-      "affects": [
-        "csamt"
       ]
     },
     {
@@ -288,6 +282,13 @@
       "text": "The internal 'diffval' flag never reaches the upload JSON \u2014 the reference deletes it alongside the tax-rate factor. This resolves what was previously an open question. Verified against a file captured from the tool.",
       "affects": [
         "output"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "A blank Cess Amount yields no csamt key at all. The reference computes cess for this section without the empty-cell guard it uses in the B2B tables, so a blank cell becomes NaN, the working file records it as null, and the upload step's omit-empty drops the key. An explicit 0 in the cell is a real zero and is emitted. This was previously recorded as a deliberate divergence emitting 0; a file captured from the tool showed that was wrong, and that these two tables are the only ones lacking the guard \u2014 every other section emits 0 for a blank cell.",
+      "affects": [
+        "csamt"
       ]
     }
   ]
