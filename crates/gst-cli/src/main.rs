@@ -34,7 +34,29 @@ enum Command {
         #[command(flatten)]
         filing: Filing,
     },
-    /// Generate portal upload JSON from a workbook
+    /// Generate the complete portal upload file from a whole workbook
+    Upload {
+        workbook: PathBuf,
+        /// Your own GSTIN, as the filer
+        #[arg(long)]
+        gstin: String,
+        /// Return period as MMYYYY, e.g. 072017
+        #[arg(long)]
+        period: String,
+        /// Treat the filer as an SEZ unit
+        #[arg(long)]
+        sez: bool,
+        /// Aggregate turnover, if the period requires it
+        #[arg(long)]
+        gt: Option<String>,
+        /// Current-period aggregate turnover
+        #[arg(long)]
+        cur_gt: Option<String>,
+        /// Directory for the generated file
+        #[arg(short, long, default_value = "out")]
+        output: PathBuf,
+    },
+    /// Generate one section's payload from a workbook
     Generate {
         workbook: PathBuf,
         #[command(flatten)]
@@ -93,6 +115,15 @@ fn main() -> ExitCode {
             filing,
             output,
         } => run_generate(&workbook, &filing, &output),
+        Command::Upload {
+            workbook,
+            gstin,
+            period,
+            sez,
+            gt,
+            cur_gt,
+            output,
+        } => run_upload(&workbook, &gstin, &period, sez, gt, cur_gt, &output),
         Command::Summary { .. } => {
             unimplemented("summary", "the section total calculator is not built yet")
         }
@@ -329,6 +360,141 @@ fn run_generate(workbook: &Path, filing: &Filing, output: &Path) -> ExitCode {
 
     if rejected > 0 {
         eprintln!("\n{rejected} row(s) were rejected — run `gst validate` to see why");
+        return ExitCode::from(EXIT_PROBLEMS);
+    }
+    ExitCode::SUCCESS
+}
+
+/// Read every section the engine knows from one workbook and assemble the
+/// complete upload file.
+///
+/// A section whose sheet is absent, or which has no rows, contributes nothing —
+/// the envelope still carries its key, empty, as the reference does.
+#[allow(clippy::too_many_arguments)]
+fn run_upload(
+    workbook: &Path,
+    gstin: &str,
+    period: &str,
+    sez: bool,
+    gt: Option<String>,
+    cur_gt: Option<String>,
+    output: &Path,
+) -> ExitCode {
+    let Some(parsed_period) = ReturnPeriod::parse(period) else {
+        eprintln!("--period '{period}' is not MMYYYY, e.g. 072017");
+        return ExitCode::from(EXIT_UNUSABLE);
+    };
+    if !gst_core::gstin::checksum_valid(gstin) {
+        eprintln!("--gstin '{gstin}' is not a valid registration number (check digit failed)");
+        return ExitCode::from(EXIT_UNUSABLE);
+    }
+    let ctx = FilingContext {
+        supplier_gstin: gstin.to_owned(),
+        period: parsed_period,
+        is_sez: sez,
+    };
+
+    let parse_turnover = |flag: &str, raw: Option<String>| match raw {
+        None => Ok(None),
+        Some(text) => text
+            .replace(',', "")
+            .parse::<rust_decimal::Decimal>()
+            .map(Some)
+            .map_err(|_| format!("--{flag} '{text}' is not a number")),
+    };
+    let turnover = match (parse_turnover("gt", gt), parse_turnover("cur-gt", cur_gt)) {
+        (Ok(gross), Ok(current)) => gst_core::upload::Turnover { gross, current },
+        (Err(e), _) | (_, Err(e)) => {
+            eprintln!("{e}");
+            return ExitCode::from(EXIT_UNUSABLE);
+        }
+    };
+
+    let mut sections: std::collections::HashMap<String, Vec<gst_core::payload::Json>> =
+        std::collections::HashMap::new();
+    let mut findings: Vec<Finding> = Vec::new();
+    let mut read = 0usize;
+    let mut accepted = 0usize;
+    let mut per_section: Vec<(String, usize, usize, usize)> = Vec::new();
+
+    for spec in spec::sections() {
+        let rows = match import::read(workbook, spec) {
+            Ok(rows) => rows,
+            // A workbook legitimately lacks sheets for sections the filer does
+            // not use, so a missing sheet is not an error here.
+            Err(import::ImportError::SheetMissing { .. }) => continue,
+            Err(e) => {
+                eprintln!("cannot read section '{}': {e}", spec.section);
+                return ExitCode::from(EXIT_UNUSABLE);
+            }
+        };
+        if rows.is_empty() {
+            continue;
+        }
+        let report = validate(spec, &rows, &ctx);
+        let out = generate(spec, &report.records, &ctx);
+        read += rows.len();
+        accepted += report.records.len();
+        per_section.push((
+            spec.section.clone(),
+            rows.len(),
+            report.records.len(),
+            out.envelopes.len(),
+        ));
+        findings.extend(report.findings);
+        findings.extend(out.findings.clone());
+        if !out.envelopes.is_empty() {
+            sections.insert(spec.section.clone(), out.envelopes);
+        }
+    }
+
+    if per_section.is_empty() {
+        eprintln!(
+            "no section sheets with data found in {}",
+            workbook.display()
+        );
+        return ExitCode::from(EXIT_UNUSABLE);
+    }
+
+    let file = gst_core::upload::build(&sections, &ctx, turnover);
+    let body = file.to_json();
+
+    if let Err(e) = std::fs::create_dir_all(output) {
+        eprintln!("cannot create {}: {e}", output.display());
+        return ExitCode::from(EXIT_UNUSABLE);
+    }
+    let path = output.join(gst_core::upload::filename(&ctx));
+    if let Err(e) = std::fs::write(&path, &body) {
+        eprintln!("cannot write {}: {e}", path.display());
+        return ExitCode::from(EXIT_UNUSABLE);
+    }
+
+    println!("{}", path.display());
+    println!("{} bytes\n", body.len());
+    println!(
+        "{:<8} {:>6} {:>9} {:>10}",
+        "section", "rows", "accepted", "records"
+    );
+    for (section, rows, ok, records) in &per_section {
+        println!("{section:<8} {rows:>6} {ok:>9} {records:>10}");
+    }
+
+    let errors = findings
+        .iter()
+        .filter(|f| f.severity == Severity::Error)
+        .count();
+    println!("\n{read} row(s) read, {accepted} accepted, {errors} error(s)");
+
+    let limit = gst_core::upload::max_chunk_bytes();
+    if body.len() > limit {
+        println!(
+            "NOTE: {} bytes exceeds the {} byte chunk limit — splitting is not implemented yet",
+            body.len(),
+            limit
+        );
+    }
+    if errors > 0 {
+        eprintln!("run `gst validate --section <name>` to see the errors");
         return ExitCode::from(EXIT_PROBLEMS);
     }
     ExitCode::SUCCESS
