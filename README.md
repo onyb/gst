@@ -1,40 +1,68 @@
 # gst
 
+[![CI](https://github.com/onyb/gst/actions/workflows/ci.yml/badge.svg)](https://github.com/onyb/gst/actions/workflows/ci.yml)
+
 An open-source, cross-platform CLI for preparing Indian GST returns offline:
 validate your Excel/CSV workbook, fix errors in the spreadsheet, and generate
-portal-ready upload JSON — the job of GSTN's Windows-only offline utilities,
-as a single `gst` command that runs anywhere.
+portal-ready upload JSON.
 
-**Status: work in progress.** MVP targets GSTR-1 and GSTR-3B.
+## The interesting part
+
+The official way to do this is GSTN's Offline Tool, a closed-source
+Windows-only `.exe`. We reverse-engineered that binary and distilled
+everything it knows (templates, validation rules, payload shapes, error
+formats) into a machine-readable spec in [`spec/`](spec/). The Rust core and
+CLI in this repo are then written purely against that spec, never against the
+tool itself, and their output is verified against the official tool's.
+
+So the spec is the product as much as the CLI: an independent, testable
+description of the GST return formats that anyone can build on.
 
 ## How it works
 
-GST returns are pure data — no invoice documents are ever uploaded. The loop:
-
-1. Fill the Excel workbook (invoice rows for GSTR-1, form cells for GSTR-3B)
-2. `gst validate workbook.xlsx` — errors with sheet/row/column references;
-   fix them in Excel
-3. `gst generate workbook.xlsx` — portal-ready upload JSON (chunked under
-   the portal's 5 MB cap for large GSTR-1 filings)
-4. Upload on gst.gov.in (Returns Dashboard → Prepare Offline). If the portal
-   rejects rows, `gst errors` maps its error file back to your sheet/rows
-5. Review and file on the portal as usual (DSC/EVC)
+1. Fill the Excel workbook as usual
+2. `gst validate workbook.xlsx` reports errors with sheet/row/column
+   references; fix them in Excel
+3. `gst generate workbook.xlsx` writes portal-ready upload JSON, chunked
+   under the portal's 5 MB cap
+4. Upload on gst.gov.in (Returns Dashboard, Prepare Offline), then review
+   and file as usual
 
 Everything runs locally. The tool makes no network calls.
 
-## Why
+## Install
 
-The official offline utilities are Windows-only (a legacy Node/AngularJS app
-and an Excel VBA macro workbook), closed-source freeware. This project is an
-independent, open-source implementation of the same publicly distributed
-file formats that works on macOS, Linux, and Windows, and is scriptable.
+```sh
+brew install onyb/tap/gst
+```
 
-## Provenance & licensing
+Or build from source: `cargo install --locked --path crates/gst-cli`.
 
-This project contains **no code from GSTN's tools**. It is written from
-scratch against the publicly distributed interfaces: Excel/CSV templates,
-portal JSON schemas, error-file formats, and validation rules — documented
-as a machine-readable spec in [`spec/`](spec/). Output equivalence is
-verified against the official tools' output (see spec README for versions).
+## Status
+
+Work in progress. The MVP targets GSTR-1 and GSTR-3B.
+
+| Feature | Status |
+|---|---|
+| GSTR-1: B2B invoices (B2B, B2BA) | Supported |
+| GSTR-1: B2C invoices (B2CL, B2CLA, B2CS, B2CSA) | Supported |
+| GSTR-1: credit/debit notes (CDNR, CDNRA, CDNUR, CDNURA) | Supported |
+| GSTR-1: exports (EXP, EXPA) | Pending |
+| GSTR-1: advances (AT, ATA, TXPD) | Pending |
+| GSTR-1: nil-rated, HSN summary, document series | Pending |
+| GSTR-3B | Pending |
+| `gst validate`, `gst generate` | Supported |
+| `gst summary`, `gst errors`, `gst diff` | Pending |
+
+## Provenance and licensing
+
+This project contains no code from GSTN's tools. The spec documents publicly
+distributed interfaces (Excel/CSV templates, portal JSON schemas, error-file
+formats, validation behavior); see [`spec/README.md`](spec/README.md) for the
+exact artifact versions it was derived from.
 
 Licensed under the [Mozilla Public License 2.0](LICENSE).
+
+## Landing page
+
+The landing page lives in [`web/`](web/) (Vite + React + TypeScript).
