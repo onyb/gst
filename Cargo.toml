@@ -10,7 +10,11 @@ repository = "https://github.com/onyb/gst"
 
 [workspace.dependencies]
 anyhow = "1"
+chrono = { version = "0.4", default-features = false, features = ["std"] }
 clap = { version = "4", features = ["derive"] }
+regex = "1"
 rust_decimal = { version = "1", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# preserve_order keeps generated payload keys in spec order, so output is
+# byte-stable and diffs against golden files stay readable.
+serde_json = { version = "1", features = ["preserve_order"] }

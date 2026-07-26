@@ -6,6 +6,8 @@ use std::sync::LazyLock;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
+use crate::spec::SpecValue;
+
 /// A GST state/UT: the code is the first two digits of every GSTIN and is
 /// also used for place of supply.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -107,6 +109,73 @@ pub static NOTE_REASONS: LazyLock<Vec<Code>> = LazyLock::new(|| {
 /// Look up a state by its two-digit code.
 pub fn state_by_code(code: &str) -> Option<&'static State> {
     STATES.iter().find(|s| s.code == code)
+}
+
+/// The masters, kept as raw JSON so specs can point into them by name.
+const MASTER_FILES: &[(&str, &str)] = &[
+    (
+        "state-codes.json",
+        include_str!("../../../spec/masters/state-codes.json"),
+    ),
+    (
+        "tax-rates.json",
+        include_str!("../../../spec/masters/tax-rates.json"),
+    ),
+    (
+        "invoice-types.json",
+        include_str!("../../../spec/masters/invoice-types.json"),
+    ),
+    (
+        "note-reasons.json",
+        include_str!("../../../spec/masters/note-reasons.json"),
+    ),
+];
+
+/// Resolve a field's `enum_ref` to the values a cell may hold.
+///
+/// A ref looks like `../masters/state-codes.json#/states`. Scalar arrays are
+/// taken as-is. Arrays of objects yield the value a workbook actually
+/// contains, preferring `import_label` (what the import path matches) over
+/// `code`, then `name` — so referencing `invoice-types.json#/table4` gives the
+/// import labels, not the codes or the labels the tool's own UI displays.
+pub fn resolve_enum_ref(reference: &str) -> Result<Vec<SpecValue>, String> {
+    let (path, pointer) = reference
+        .split_once('#')
+        .ok_or_else(|| format!("enum_ref `{reference}` has no JSON pointer"))?;
+    let file = path
+        .rsplit('/')
+        .next()
+        .ok_or_else(|| format!("enum_ref `{reference}` has no filename"))?;
+    let raw = MASTER_FILES
+        .iter()
+        .find(|(name, _)| *name == file)
+        .map(|(_, json)| *json)
+        .ok_or_else(|| format!("enum_ref `{reference}` names an unknown master `{file}`"))?;
+
+    let doc: serde_json::Value =
+        serde_json::from_str(raw).map_err(|e| format!("master {file} is invalid: {e}"))?;
+    let target = doc
+        .pointer(pointer)
+        .ok_or_else(|| format!("enum_ref `{reference}` does not resolve in {file}"))?;
+    let items = target
+        .as_array()
+        .ok_or_else(|| format!("enum_ref `{reference}` does not point at an array"))?;
+
+    items
+        .iter()
+        .map(|item| match item {
+            serde_json::Value::Object(map) => ["import_label", "code", "name"]
+                .iter()
+                .find_map(|k| map.get(*k))
+                .and_then(|v| v.as_str())
+                .map(|s| SpecValue::Text(s.to_owned()))
+                .ok_or_else(|| {
+                    format!("enum_ref `{reference}`: object has no import_label, code or name")
+                }),
+            other => serde_json::from_value(other.clone())
+                .map_err(|e| format!("enum_ref `{reference}`: {e}")),
+        })
+        .collect()
 }
 
 #[cfg(test)]
