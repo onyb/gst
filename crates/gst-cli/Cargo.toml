@@ -11,6 +11,5 @@ name = "gst"
 path = "src/main.rs"
 
 [dependencies]
-anyhow.workspace = true
 clap.workspace = true
 gst-core = { path = "../gst-core" }
