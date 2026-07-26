@@ -190,6 +190,15 @@ fn validate_field(field: &Field, raw: &str, ctx: &FilingContext) -> Result<Cell,
         ));
     }
 
+    // Numeric cells arrive with thousands separators from hand-edited CSVs and
+    // from spreadsheets that store a formatted string. The reference strips
+    // them before validating, so the same happens here — see the divergence
+    // note: it removes only the FIRST comma, which silently truncates
+    // '1,234,567' to 1234, so this strips them all.
+    if field.ty == FieldType::Decimal {
+        text = text.replace(',', "");
+    }
+
     // `state_code` cells arrive as 'NN-Name'; every later check wants the code.
     let checked = if field.ty == FieldType::StateCode {
         state_code_prefix(&text)
@@ -524,6 +533,31 @@ mod tests {
         assert_eq!(r.number("csamt"), Some(Decimal::ZERO));
         // Dates normalize to the payload form.
         assert_eq!(r.text("idt"), "14-07-2017");
+    }
+
+    #[test]
+    fn thousands_separators_are_stripped_from_numeric_cells() {
+        // GSTN's own cdnr sample CSV quotes a taxable value as "4,981".
+        let report = validate(&GSTR1_B2B, &[with("Taxable Value", "4,981")], &ctx());
+        assert!(report.is_clean(), "{:?}", report.findings);
+        assert_eq!(
+            report.records[0].number("txval"),
+            Some(Decimal::new(4981, 0))
+        );
+
+        // Deliberate divergence: the reference strips only the first comma, so
+        // it would read this as 1234. Every separator is removed here.
+        let report = validate(&GSTR1_B2B, &[with("Taxable Value", "1,234,567")], &ctx());
+        assert!(report.is_clean(), "{:?}", report.findings);
+        assert_eq!(
+            report.records[0].number("txval"),
+            Some(Decimal::new(1234567, 0))
+        );
+
+        // Text fields keep their commas — only numeric cells are normalized.
+        let report = validate(&GSTR1_B2B, &[with("Receiver Name", "Acme, Inc")], &ctx());
+        assert!(report.is_clean(), "{:?}", report.findings);
+        assert_eq!(report.records[0].text("cname"), "Acme, Inc");
     }
 
     #[test]
