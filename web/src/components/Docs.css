@@ -1,0 +1,79 @@
+.docs {
+  margin-top: var(--space-7);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  background: var(--paper-raised);
+  font-size: var(--text-small);
+}
+
+.docs-head {
+  display: flex;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--rule-strong);
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.docs-row {
+  display: grid;
+  grid-template-columns: 10rem minmax(0, 1fr);
+  gap: var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: var(--border);
+}
+
+.docs-row:last-child {
+  border-bottom: none;
+}
+
+.docs-verb {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  color: var(--ink);
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.docs-tag {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--radius);
+}
+
+.docs-tag.is-ready {
+  color: var(--ok);
+  background: var(--ok-soft);
+}
+
+.docs-tag.is-planned {
+  color: var(--ink-soft);
+  border: 1px solid var(--rule-strong);
+}
+
+.docs-desc {
+  color: var(--ink);
+}
+
+.docs-usage {
+  display: block;
+  margin-top: var(--space-1);
+  font-size: 0.8125rem;
+  color: var(--ink-soft);
+  word-break: break-word;
+}
+
+@media (max-width: 40rem) {
+  .docs-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-2);
+  }
+}

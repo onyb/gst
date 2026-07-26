@@ -1,0 +1,166 @@
+.hero {
+  padding: var(--space-5) var(--space-4) var(--space-8);
+}
+
+.hero-nav {
+  max-width: var(--content-width);
+  margin: 0 auto var(--space-8);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  padding-left: var(--margin-rule);
+}
+
+.hero-nav-mark {
+  font-weight: 500;
+  color: var(--stamp);
+}
+
+.hero-nav-mark::before {
+  content: "$ ";
+  opacity: 0.5;
+}
+
+.hero-nav-links {
+  display: flex;
+  gap: var(--space-5);
+}
+
+.hero-nav-links a {
+  color: var(--ink-soft);
+  text-decoration: none;
+}
+
+.hero-nav-links a:hover {
+  color: var(--stamp);
+}
+
+.hero-inner {
+  max-width: var(--content-width);
+  margin: 0 auto;
+  padding-left: var(--margin-rule);
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: var(--space-7);
+  align-items: start;
+}
+
+.hero-headline {
+  font-size: var(--text-h1);
+  max-width: 16ch;
+}
+
+.hero-headline em {
+  display: block;
+}
+
+.hero-sub {
+  margin-top: var(--space-5);
+  max-width: 44ch;
+  color: var(--ink-soft);
+  font-size: var(--text-lg);
+  text-wrap: pretty;
+}
+
+.hero-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  margin-top: var(--space-7);
+  flex-wrap: wrap;
+}
+
+.hero-install {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: 100%;
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 0.9375rem;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius);
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease;
+}
+
+.hero-install:hover {
+  background: #232c47;
+}
+
+.hero-install-prompt {
+  color: var(--term-green);
+}
+
+.hero-install-cmd {
+  font-family: inherit;
+  white-space: normal;
+  word-break: break-all;
+}
+
+.hero-install-action {
+  flex-shrink: 0;
+  margin-left: var(--space-2);
+  color: var(--term-fg-soft);
+  text-transform: uppercase;
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+}
+
+.hero-github {
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  color: var(--ink);
+  text-decoration: none;
+  border-bottom: 1px solid var(--stamp);
+  padding-bottom: 2px;
+}
+
+.hero-github:hover {
+  color: var(--stamp);
+}
+
+.hero-figure {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* The stamp lands on the paper above the ledger, clipping its corner. */
+.hero-figure .stamp {
+  position: absolute;
+  top: -5rem;
+  right: -2.25rem;
+  z-index: 1;
+}
+
+@media (max-width: 60rem) {
+  .hero-inner {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .hero-figure {
+    margin-top: var(--space-5);
+  }
+  .hero-figure .stamp {
+    top: -2rem;
+    right: 0;
+  }
+}
+
+@media (max-width: 40rem) {
+  .hero-nav {
+    flex-wrap: wrap;
+    row-gap: var(--space-3);
+    margin-bottom: var(--space-7);
+  }
+  .hero-nav-links {
+    gap: var(--space-4);
+    flex-wrap: wrap;
+  }
+}

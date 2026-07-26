@@ -1,0 +1,59 @@
+.ledger {
+  background: var(--paper-raised);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  overflow-x: auto;
+}
+
+.ledger-caption {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: var(--border);
+}
+
+.ledger table {
+  width: 100%;
+  min-width: max-content;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+.ledger th,
+.ledger td {
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--rule);
+  white-space: nowrap;
+}
+
+.ledger th {
+  color: var(--ink-soft);
+  font-weight: 500;
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ledger tr:last-child td {
+  border-bottom: none;
+}
+
+.ledger td.is-flagged {
+  background: var(--stamp-soft);
+  color: var(--stamp);
+  font-weight: 500;
+}
+
+.ledger tr.is-flagged-row td {
+  background: rgba(85, 53, 164, 0.04);
+  transition: background 0.15s ease;
+}
+
+.ledger tr.is-flagged-row.is-active td {
+  background: rgba(85, 53, 164, 0.12);
+}

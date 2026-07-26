@@ -1,0 +1,32 @@
+.footer {
+  border-top: var(--border);
+  padding: var(--space-6) var(--space-4);
+}
+
+.footer-inner {
+  max-width: var(--content-width);
+  margin: 0 auto;
+  padding-left: var(--margin-rule);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  color: var(--ink-soft);
+}
+
+.footer-links {
+  display: flex;
+  gap: var(--space-5);
+}
+
+.footer-links a {
+  color: var(--ink-soft);
+  text-decoration: none;
+}
+
+.footer-links a:hover {
+  color: var(--stamp);
+}

@@ -1,0 +1,56 @@
+:root {
+  /* Color — crisp white form paper, blue-black ink, violet rubber-stamp ink */
+  --paper: #fbfbf8;
+  --paper-raised: #ffffff;
+  --rule: #e4e4dc;
+  --rule-strong: #cfcfc4;
+  --ink: #171d2b;
+  --ink-soft: #5c6374;
+  --stamp: #5535a4;
+  --stamp-soft: rgba(85, 53, 164, 0.1);
+  --ok: #2e7d4f;
+  --ok-soft: rgba(46, 125, 79, 0.12);
+  --term-bg: #121729;
+  --term-fg: #e6e9f2;
+  --term-fg-soft: #8891a6;
+  --term-green: #79b586;
+  --term-red: #e07a68;
+  --term-yellow: #d9a441;
+
+  /* Type — one superfamily: Serif for display, Sans for body, Mono for data */
+  --font-serif: "IBM Plex Serif", Georgia, serif;
+  --font-sans: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+
+  --text-label: 0.75rem;
+  --text-small: 0.875rem;
+  --text-body: 1.0625rem;
+  --text-lg: 1.1875rem;
+  --text-h2: clamp(1.75rem, 1.4rem + 1.5vw, 2.5rem);
+  --text-h1: clamp(2.5rem, 1.6rem + 3vw, 4.25rem);
+
+  /* Spacing */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4.5rem;
+  --space-9: 7rem;
+
+  --content-width: 68rem;
+  /* The ledger margin: one violet rule runs the full page height at this
+     offset; section labels hang to its left. */
+  --margin-rule: 5.5rem;
+
+  --radius: 2px;
+  --border: 1px solid var(--rule);
+}
+
+@media (max-width: 60rem) {
+  :root {
+    --margin-rule: 1.25rem;
+  }
+}

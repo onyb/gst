@@ -1,0 +1,56 @@
+.compare {
+  margin-top: var(--space-7);
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-small);
+}
+
+.compare th,
+.compare td {
+  text-align: left;
+  padding: var(--space-4) var(--space-5) var(--space-4) 0;
+  border-bottom: var(--border);
+  vertical-align: baseline;
+}
+
+.compare thead th {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  border-bottom: 1px solid var(--rule-strong);
+}
+
+.compare tbody th {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--ink-soft);
+  width: 8rem;
+}
+
+.compare td {
+  color: var(--ink-soft);
+  width: 40%;
+}
+
+.compare .compare-gst {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.compare thead .compare-gst {
+  color: var(--stamp);
+}
+
+@media (max-width: 40rem) {
+  .compare tbody th {
+    width: 5.5rem;
+  }
+  .compare th,
+  .compare td {
+    padding-right: var(--space-3);
+  }
+}

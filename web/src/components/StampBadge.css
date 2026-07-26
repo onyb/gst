@@ -1,0 +1,77 @@
+.stamp {
+  --stamp-size: 8.5rem;
+  width: var(--stamp-size);
+  height: var(--stamp-size);
+  border-radius: 50%;
+  border: 2px solid var(--stamp);
+  outline: 1px solid var(--stamp);
+  outline-offset: -6px;
+  color: var(--stamp);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: rotate(-9deg);
+  flex-shrink: 0;
+  position: relative;
+  mix-blend-mode: multiply;
+}
+
+.stamp::before {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 1px solid var(--stamp);
+  opacity: 0.35;
+}
+
+.stamp-text {
+  font-family: var(--font-mono);
+  text-align: center;
+  line-height: 1.35;
+}
+
+.stamp-text strong {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+.stamp-text span {
+  display: block;
+  font-size: 0.625rem;
+  letter-spacing: 0.1em;
+}
+
+.stamp-text .stamp-rule {
+  width: 2.25rem;
+  height: 1px;
+  background: var(--stamp);
+  opacity: 0.5;
+  margin: 0.3rem auto;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .stamp {
+    animation: stamp-in 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+    animation-delay: 0.5s;
+  }
+}
+
+@keyframes stamp-in {
+  from {
+    opacity: 0;
+    transform: rotate(-9deg) scale(1.6);
+  }
+  to {
+    opacity: 1;
+    transform: rotate(-9deg) scale(1);
+  }
+}
+
+@media (max-width: 640px) {
+  .stamp {
+    --stamp-size: 7.5rem;
+  }
+}
