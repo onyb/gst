@@ -5,46 +5,27 @@
 //! first section with a period-dependent rule: the invoice-value threshold
 //! changed with the August 2024 period.
 
-use gst_core::date::ReturnPeriod;
+mod common;
+
 use gst_core::generate::generate;
 use gst_core::record::Row;
-use gst_core::spec::{self, SectionSpec, Severity};
+use gst_core::spec::SectionSpec;
 use gst_core::validate::{FilingContext, validate};
 
 fn b2cl() -> &'static SectionSpec {
-    spec::section("b2cl").expect("b2cl is registered")
+    common::sec("b2cl")
 }
 
 /// A Maharashtra (27) supplier, so any other state is inter-state.
 fn ctx(month: u32, year: i32) -> FilingContext {
-    FilingContext {
-        supplier_gstin: "27AAPFU0939F1ZV".into(),
-        period: ReturnPeriod::new(month, year).unwrap(),
-        is_sez: false,
-        aato_over_5cr: false,
-    }
-}
-
-const COLUMNS: [&str; 9] = [
-    "Invoice Number",
-    "Invoice date",
-    "Invoice Value",
-    "Place Of Supply",
-    "Applicable % of Tax Rate",
-    "Rate",
-    "Taxable Value",
-    "Cess Amount",
-    "E-Commerce GSTIN",
-];
-
-fn row(sheet_row: usize, values: [&str; 9]) -> Row {
-    Row::from_pairs(sheet_row, COLUMNS.into_iter().zip(values))
+    common::ctx(month, year)
 }
 
 fn base(sheet_row: usize) -> Row {
-    row(
+    common::row(
+        b2cl(),
         sheet_row,
-        [
+        &[
             "INV-L001",
             "14-Jul-17",
             "295000",
@@ -59,26 +40,11 @@ fn base(sheet_row: usize) -> Row {
 }
 
 fn with(sheet_row: usize, column: &str, value: &str) -> Row {
-    let mut r = base(sheet_row);
-    r.cells.insert(column.to_owned(), value.to_owned());
-    r
+    base(sheet_row).with_cell(column, value)
 }
 
 fn payload(rows: &[Row], c: &FilingContext) -> String {
-    let report = validate(b2cl(), rows, c);
-    assert!(report.is_clean(), "validation: {:?}", report.findings);
-    let out = generate(b2cl(), &report.records, c);
-    assert!(
-        !out.findings.iter().any(|f| f.severity == Severity::Error),
-        "generation: {:?}",
-        out.findings
-    );
-    out.to_json()
-}
-
-#[test]
-fn every_derivation_the_spec_names_is_implemented() {
-    assert!(gst_core::generate::unimplemented_derivations(b2cl()).is_empty());
+    common::payload(b2cl(), rows, c)
 }
 
 #[test]
@@ -245,8 +211,7 @@ fn applicable_percent_scales_the_tax() {
 
 #[test]
 fn the_shipped_fixture_validates_and_generates() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/gstr1/b2cl-sample.csv");
+    let path = common::repo_path("fixtures/gstr1/b2cl-sample.csv");
     let rows = gst_core::import::read(&path, b2cl()).expect("reads");
     assert_eq!(rows.len(), 5);
 

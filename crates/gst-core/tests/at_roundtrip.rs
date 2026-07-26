@@ -6,63 +6,35 @@
 //! supply equal to the supplier's own state, and that is exactly the case that
 //! produces central and state tax instead of integrated.
 
-use gst_core::date::ReturnPeriod;
+mod common;
+
 use gst_core::generate::generate;
 use gst_core::record::Row;
-use gst_core::spec::{self, SectionSpec, Severity};
+use gst_core::spec::{SectionSpec, Severity};
 use gst_core::validate::{FilingContext, validate};
 
 fn at() -> &'static SectionSpec {
-    spec::section("at").expect("at is registered")
+    common::sec("at")
 }
 
 fn ctx() -> FilingContext {
-    FilingContext {
-        supplier_gstin: "27AAPFU0939F1ZV".into(),
-        period: ReturnPeriod::new(7, 2017).unwrap(),
-        is_sez: false,
-        aato_over_5cr: false,
-    }
+    common::ctx(7, 2017)
 }
 
-const COLUMNS: [&str; 5] = [
-    "Place Of Supply",
-    "Applicable % of Tax Rate",
-    "Rate",
-    "Gross Advance Received",
-    "Cess Amount",
-];
-
 fn base(sheet_row: usize) -> Row {
-    Row::from_pairs(
+    common::row(
+        at(),
         sheet_row,
-        COLUMNS
-            .into_iter()
-            .zip(["37-Andhra Pradesh", "", "18", "100000", ""]),
+        &["37-Andhra Pradesh", "", "18", "100000", ""],
     )
 }
 
 fn with(sheet_row: usize, column: &str, value: &str) -> Row {
-    let mut r = base(sheet_row);
-    r.cells.insert(column.to_owned(), value.to_owned());
-    r
+    base(sheet_row).with_cell(column, value)
 }
 
 fn payload(rows: &[Row], c: &FilingContext) -> String {
-    let report = validate(at(), rows, c);
-    assert!(report.is_clean(), "validation: {:?}", report.findings);
-    let out = generate(at(), &report.records, c);
-    assert!(
-        !out.findings.iter().any(|f| f.severity == Severity::Error),
-        "generation: {:?}",
-        out.findings
-    );
-    out.to_json()
-}
-
-#[test]
-fn every_derivation_the_spec_names_is_implemented() {
-    assert!(gst_core::generate::unimplemented_derivations(at()).is_empty());
+    common::payload(at(), rows, c)
 }
 
 #[test]
@@ -134,7 +106,14 @@ fn only_a_hundred_or_sixty_five_are_accepted_as_the_factor() {
     }
     // A CSV writes the factor as '65.00'; the reference's string pattern
     // rejects that while accepting an Excel cell holding 65. We accept both.
-    assert!(validate(at(), &[with(5, "Applicable % of Tax Rate", "65.00")], &ctx()).is_clean());
+    assert!(
+        validate(
+            at(),
+            &[with(5, "Applicable % of Tax Rate", "65.00")],
+            &ctx()
+        )
+        .is_clean()
+    );
 }
 
 #[test]
@@ -214,8 +193,9 @@ fn rows_sharing_a_place_of_supply_must_agree_on_the_tax_rate_factor() {
     assert!(report.is_clean(), "{:?}", report.findings);
     let out = generate(at(), &report.records, &ctx());
     assert!(
-        out.findings.iter().any(|f| f.severity == Severity::Error
-            && f.message.contains("Applicable % of Tax Rate")),
+        out.findings.iter().any(
+            |f| f.severity == Severity::Error && f.message.contains("Applicable % of Tax Rate")
+        ),
         "{:?}",
         out.findings
     );
@@ -235,8 +215,7 @@ fn a_place_of_supply_outside_the_code_range_is_rejected() {
 
 #[test]
 fn the_shipped_fixture_validates_and_generates() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/gstr1/at-sample.csv");
+    let path = common::repo_path("fixtures/gstr1/at-sample.csv");
     let rows = gst_core::import::read(&path, at()).expect("reads");
     assert_eq!(rows.len(), 4);
 

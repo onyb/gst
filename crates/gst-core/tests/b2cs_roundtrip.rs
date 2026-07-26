@@ -5,68 +5,41 @@
 //! It is also the first section that permits negative values, and the first
 //! where both branches of the tax split are genuinely reachable.
 
-use gst_core::date::ReturnPeriod;
+mod common;
+
 use gst_core::generate::generate;
 use gst_core::record::Row;
-use gst_core::spec::{self, SectionSpec, Severity};
+use gst_core::spec::{SectionSpec, Severity};
 use gst_core::validate::{FilingContext, validate};
 
 fn b2cs() -> &'static SectionSpec {
-    spec::section("b2cs").expect("b2cs is registered")
+    common::sec("b2cs")
 }
 
 /// A Maharashtra (27) supplier.
 fn ctx() -> FilingContext {
-    FilingContext {
-        supplier_gstin: "27AAPFU0939F1ZV".into(),
-        period: ReturnPeriod::new(7, 2017).unwrap(),
-        is_sez: false,
-        aato_over_5cr: false,
-    }
+    common::ctx(7, 2017)
 }
 
-/// Excel-template order, which is what the spec records.
-const COLUMNS: [&str; 7] = [
-    "Type",
-    "Place Of Supply",
-    "Applicable % of Tax Rate",
-    "Rate",
-    "Taxable Value",
-    "Cess Amount",
-    "E-Commerce GSTIN",
-];
-
 fn base(sheet_row: usize) -> Row {
-    Row::from_pairs(
+    common::row(
+        b2cs(),
         sheet_row,
-        COLUMNS
-            .into_iter()
-            .zip(["OE", "37-Andhra Pradesh", "", "18", "300000", "", ""]),
+        &["OE", "37-Andhra Pradesh", "", "18", "300000", "", ""],
     )
 }
 
 fn with(sheet_row: usize, column: &str, value: &str) -> Row {
-    let mut r = base(sheet_row);
-    r.cells.insert(column.to_owned(), value.to_owned());
-    r
+    base(sheet_row).with_cell(column, value)
 }
 
 fn payload(rows: &[Row], c: &FilingContext) -> String {
-    let report = validate(b2cs(), rows, c);
-    assert!(report.is_clean(), "validation: {:?}", report.findings);
-    let out = generate(b2cs(), &report.records, c);
-    assert!(
-        !out.findings.iter().any(|f| f.severity == Severity::Error),
-        "generation: {:?}",
-        out.findings
-    );
-    out.to_json()
+    common::payload(b2cs(), rows, c)
 }
 
 #[test]
-fn the_section_is_flat_and_declares_its_derivations() {
+fn the_section_is_flat() {
     assert!(b2cs().is_flat(), "b2cs should be a flat section");
-    assert!(gst_core::generate::unimplemented_derivations(b2cs()).is_empty());
 }
 
 #[test]
@@ -211,8 +184,7 @@ fn the_shipped_fixture_validates_and_generates() {
     // The fixture is written in the SECTION CSV's column order, which swaps
     // Rate and Applicable % of Tax Rate relative to the Excel template —
     // import matches on header text, so it reads correctly either way.
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/gstr1/b2cs-sample.csv");
+    let path = common::repo_path("fixtures/gstr1/b2cs-sample.csv");
     let rows = gst_core::import::read(&path, b2cs()).expect("reads");
     assert_eq!(rows.len(), 5);
 

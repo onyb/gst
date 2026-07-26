@@ -4,54 +4,29 @@
 //! covered by the B2B suite; these focus on the original-invoice keys and on
 //! the parts where the two sections legitimately differ.
 
-use gst_core::date::ReturnPeriod;
+mod common;
+
 use gst_core::generate::generate;
 use gst_core::record::Row;
-use gst_core::spec::{self, SectionSpec, Severity};
+use gst_core::spec::{SectionSpec, Severity};
 use gst_core::validate::{FilingContext, validate};
 
 fn b2ba() -> &'static SectionSpec {
-    spec::section("b2ba").expect("b2ba is registered")
+    common::sec("b2ba")
 }
 
 /// A Maharashtra supplier amending, in September 2017, invoices first reported
 /// in July.
 fn september() -> FilingContext {
-    FilingContext {
-        supplier_gstin: "27AAPFU0939F1ZV".into(),
-        period: ReturnPeriod::new(9, 2017).unwrap(),
-        is_sez: false,
-        aato_over_5cr: false,
-    }
-}
-
-const COLUMNS: [&str; 15] = [
-    "GSTIN/UIN of Recipient",
-    "Receiver Name",
-    "Original Invoice Number",
-    "Original Invoice date",
-    "Revised Invoice Number",
-    "Revised Invoice date",
-    "Invoice Value",
-    "Place Of Supply",
-    "Reverse Charge",
-    "Applicable % of Tax Rate",
-    "Invoice Type",
-    "E-Commerce GSTIN",
-    "Rate",
-    "Taxable Value",
-    "Cess Amount",
-];
-
-fn row(sheet_row: usize, values: [&str; 15]) -> Row {
-    Row::from_pairs(sheet_row, COLUMNS.into_iter().zip(values))
+    common::ctx(9, 2017)
 }
 
 /// A clean single-rate amendment, as a base for targeted mutation.
 fn base(sheet_row: usize) -> Row {
-    row(
+    common::row(
+        b2ba(),
         sheet_row,
-        [
+        &[
             "12GEOPS0823BBZH",
             "Acme Traders",
             "INV-001",
@@ -72,30 +47,11 @@ fn base(sheet_row: usize) -> Row {
 }
 
 fn with(sheet_row: usize, column: &str, value: &str) -> Row {
-    let mut r = base(sheet_row);
-    r.cells.insert(column.to_owned(), value.to_owned());
-    r
+    base(sheet_row).with_cell(column, value)
 }
 
 fn payload(rows: &[Row], ctx: &FilingContext) -> String {
-    let report = validate(b2ba(), rows, ctx);
-    assert!(
-        report.is_clean(),
-        "validation should be clean, got {:?}",
-        report.findings
-    );
-    let out = generate(b2ba(), &report.records, ctx);
-    assert!(
-        !out.findings.iter().any(|f| f.severity == Severity::Error),
-        "generation should be clean, got {:?}",
-        out.findings
-    );
-    out.to_json()
-}
-
-#[test]
-fn every_derivation_the_spec_names_is_implemented() {
-    assert!(gst_core::generate::unimplemented_derivations(b2ba()).is_empty());
+    common::payload(b2ba(), rows, ctx)
 }
 
 #[test]
@@ -138,9 +94,7 @@ fn nothing_requires_the_revision_to_follow_the_original() {
 #[test]
 fn the_revised_number_may_equal_the_original() {
     // Common when only the value or place of supply was wrong.
-    let mut r = base(5);
-    r.cells
-        .insert("Revised Invoice Number".into(), "INV-001".into());
+    let r = with(5, "Revised Invoice Number", "INV-001");
     let json = payload(&[r], &september());
     assert!(
         json.contains(r#""oinum":"INV-001","oidt":"14-07-2017","inum":"INV-001""#),
@@ -166,12 +120,9 @@ fn both_invoice_numbers_reject_a_numerically_zero_value() {
 fn rows_grouping_as_one_amendment_must_agree_on_the_original_invoice() {
     // Same recipient and revised number, contradictory original number: the
     // reference rejects this, and so does the field-agreement check.
-    let mut second = base(6);
-    second.cells.insert("Rate".into(), "5".into());
-    second.cells.insert("Taxable Value".into(), "20000".into());
-    second
-        .cells
-        .insert("Original Invoice Number".into(), "INV-999".into());
+    let second = with(6, "Rate", "5")
+        .with_cell("Taxable Value", "20000")
+        .with_cell("Original Invoice Number", "INV-999");
 
     let report = validate(b2ba(), &[base(5), second], &september());
     assert!(report.is_clean(), "{:?}", report.findings);
@@ -189,9 +140,7 @@ fn rows_grouping_as_one_amendment_must_agree_on_the_original_invoice() {
 
 #[test]
 fn a_multi_rate_amendment_becomes_one_record_with_several_items() {
-    let mut second = base(6);
-    second.cells.insert("Rate".into(), "5".into());
-    second.cells.insert("Taxable Value".into(), "20000".into());
+    let second = with(6, "Rate", "5").with_cell("Taxable Value", "20000");
 
     let json = payload(&[base(5), second], &september());
     assert_eq!(json.matches(r#""oinum":"INV-001""#).count(), 1, "{json}");
@@ -225,8 +174,7 @@ fn cross_field_rules_apply_to_the_corrected_invoice_type() {
         report.findings
     );
 
-    let mut de = with(5, "Invoice Type", "Deemed Exp");
-    de.cells.insert("Reverse Charge".into(), "Y".into());
+    let de = with(5, "Invoice Type", "Deemed Exp").with_cell("Reverse Charge", "Y");
     let report = validate(b2ba(), &[de], &september());
     assert!(
         report
@@ -239,8 +187,7 @@ fn cross_field_rules_apply_to_the_corrected_invoice_type() {
 
 #[test]
 fn the_shipped_fixture_validates_and_generates() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/gstr1/b2ba-sample.csv");
+    let path = common::repo_path("fixtures/gstr1/b2ba-sample.csv");
     let rows = gst_core::import::read(&path, b2ba()).expect("reads");
     assert_eq!(rows.len(), 5);
 

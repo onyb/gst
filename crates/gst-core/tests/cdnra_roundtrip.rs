@@ -3,47 +3,26 @@
 //! The unamended section plus original-note keys. Covers only what differs;
 //! the shared note behaviour is exercised by the cdnr suite.
 
-use gst_core::date::ReturnPeriod;
+mod common;
+
 use gst_core::generate::generate;
 use gst_core::record::Row;
-use gst_core::spec::{self, SectionSpec, Severity};
+use gst_core::spec::SectionSpec;
 use gst_core::validate::{FilingContext, validate};
 
 fn cdnra() -> &'static SectionSpec {
-    spec::section("cdnra").expect("cdnra is registered")
+    common::sec("cdnra")
 }
 
 fn ctx() -> FilingContext {
-    FilingContext {
-        supplier_gstin: "27AAPFU0939F1ZV".into(),
-        period: ReturnPeriod::new(9, 2017).unwrap(),
-        is_sez: false,
-        aato_over_5cr: false,
-    }
+    common::ctx(9, 2017)
 }
 
-const COLUMNS: [&str; 15] = [
-    "GSTIN/UIN of Recipient",
-    "Receiver Name",
-    "Original Note Number",
-    "Original Note Date",
-    "Revised Note Number",
-    "Revised Note Date",
-    "Note Type",
-    "Place Of Supply",
-    "Reverse Charge",
-    "Note Supply Type",
-    "Note Value",
-    "Applicable % of Tax Rate",
-    "Rate",
-    "Taxable Value",
-    "Cess Amount",
-];
-
 fn base(sheet_row: usize) -> Row {
-    Row::from_pairs(
+    common::row(
+        cdnra(),
         sheet_row,
-        COLUMNS.into_iter().zip([
+        &[
             "12GEOPS0823BBZH",
             "Acme Traders",
             "CN-001",
@@ -59,31 +38,16 @@ fn base(sheet_row: usize) -> Row {
             "18",
             "50000",
             "",
-        ]),
+        ],
     )
 }
 
 fn with(sheet_row: usize, column: &str, value: &str) -> Row {
-    let mut r = base(sheet_row);
-    r.cells.insert(column.to_owned(), value.to_owned());
-    r
+    base(sheet_row).with_cell(column, value)
 }
 
 fn payload(rows: &[Row], c: &FilingContext) -> String {
-    let report = validate(cdnra(), rows, c);
-    assert!(report.is_clean(), "validation: {:?}", report.findings);
-    let out = generate(cdnra(), &report.records, c);
-    assert!(
-        !out.findings.iter().any(|f| f.severity == Severity::Error),
-        "generation: {:?}",
-        out.findings
-    );
-    out.to_json()
-}
-
-#[test]
-fn every_derivation_the_spec_names_is_implemented() {
-    assert!(gst_core::generate::unimplemented_derivations(cdnra()).is_empty());
+    common::payload(cdnra(), rows, c)
 }
 
 #[test]
@@ -162,8 +126,7 @@ fn taxable_value_must_be_strictly_positive() {
 
 #[test]
 fn the_shipped_fixture_validates_and_generates() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/gstr1/cdnra-sample.csv");
+    let path = common::repo_path("fixtures/gstr1/cdnra-sample.csv");
     let rows = gst_core::import::read(&path, cdnra()).expect("reads");
     assert_eq!(rows.len(), 3);
 

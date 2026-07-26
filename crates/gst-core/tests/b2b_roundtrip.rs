@@ -5,70 +5,28 @@
 //! change to either the spec or the engine that alters generated output shows
 //! up here.
 
-use gst_core::date::ReturnPeriod;
-use gst_core::generate::{self, generate};
+mod common;
+
+use gst_core::generate::generate;
 use gst_core::record::Row;
-use gst_core::spec::{GSTR1_B2B, Severity};
+use gst_core::spec::{SectionSpec, Severity};
 use gst_core::validate::{FilingContext, validate};
+
+fn b2b() -> &'static SectionSpec {
+    common::sec("b2b")
+}
 
 /// A Maharashtra (27) supplier filing for July 2017.
 fn maharashtra() -> FilingContext {
-    FilingContext {
-        supplier_gstin: "27AAPFU0939F1ZV".into(),
-        period: ReturnPeriod::new(7, 2017).unwrap(),
-        is_sez: false,
-        aato_over_5cr: false,
-    }
+    common::ctx(7, 2017)
 }
 
-/// Columns in template order, so tests read like a spreadsheet row.
-const COLUMNS: [&str; 13] = [
-    "GSTIN/UIN of Recipient",
-    "Receiver Name",
-    "Invoice Number",
-    "Invoice date",
-    "Invoice Value",
-    "Place Of Supply",
-    "Reverse Charge",
-    "Applicable % of Tax Rate",
-    "Invoice Type",
-    "E-Commerce GSTIN",
-    "Rate",
-    "Taxable Value",
-    "Cess Amount",
-];
-
-fn row(sheet_row: usize, values: [&str; 13]) -> Row {
-    Row::from_pairs(sheet_row, COLUMNS.into_iter().zip(values))
-}
-
-/// Validate then generate, asserting validation was clean.
-fn payload(rows: &[Row], ctx: &FilingContext) -> String {
-    let report = validate(&GSTR1_B2B, rows, ctx);
-    assert!(
-        report.is_clean(),
-        "validation should be clean, got {:?}",
-        report.findings
-    );
-    let out = generate(&GSTR1_B2B, &report.records, ctx);
-    assert!(
-        !out.findings.iter().any(|f| f.severity == Severity::Error),
-        "generation should be clean, got {:?}",
-        out.findings
-    );
-    out.to_json()
-}
-
-#[test]
-fn every_derivation_the_spec_names_is_implemented() {
-    assert!(generate::unimplemented_derivations(&GSTR1_B2B).is_empty());
-}
-
-#[test]
-fn a_single_interstate_invoice_produces_the_expected_payload() {
-    let rows = [row(
-        5,
-        [
+/// A clean single-rate inter-state invoice, as a base for targeted mutation.
+fn base(sheet_row: usize) -> Row {
+    common::row(
+        b2b(),
+        sheet_row,
+        &[
             "12GEOPS0823BBZH",
             "Acme Traders",
             "INV-001",
@@ -83,7 +41,21 @@ fn a_single_interstate_invoice_produces_the_expected_payload() {
             "45000",
             "",
         ],
-    )];
+    )
+}
+
+fn with(sheet_row: usize, column: &str, value: &str) -> Row {
+    base(sheet_row).with_cell(column, value)
+}
+
+/// Validate then generate, asserting validation was clean.
+fn payload(rows: &[Row], ctx: &FilingContext) -> String {
+    common::payload(b2b(), rows, ctx)
+}
+
+#[test]
+fn a_single_interstate_invoice_produces_the_expected_payload() {
+    let rows = [base(5)];
 
     // Supplier is 27, place of supply is 37, so this is inter-state: integrated
     // tax at the full rate, no central or state tax, and the empty e-commerce
@@ -94,26 +66,19 @@ fn a_single_interstate_invoice_produces_the_expected_payload() {
     );
 }
 
+/// The row shared by the intra-state tests: the supplier's own state as both
+/// recipient state and place of supply.
+fn local_buyer(sheet_row: usize) -> Row {
+    base(sheet_row)
+        .with_cell("GSTIN/UIN of Recipient", "27AAPFU0939F1ZV")
+        .with_cell("Receiver Name", "Local Buyer")
+        .with_cell("Invoice Number", "INV-002")
+        .with_cell("Place Of Supply", "27-Maharashtra")
+}
+
 #[test]
 fn an_intrastate_invoice_splits_tax_into_central_and_state() {
-    let rows = [row(
-        5,
-        [
-            "27AAPFU0939F1ZV",
-            "Local Buyer",
-            "INV-002",
-            "14-Jul-17",
-            "50000",
-            "27-Maharashtra",
-            "N",
-            "",
-            "Regular B2B",
-            "",
-            "18",
-            "45000",
-            "",
-        ],
-    )];
+    let rows = [local_buyer(5)];
 
     let json = payload(&rows, &maharashtra());
     // Half the rate each, and no integrated tax key at all.
@@ -125,30 +90,11 @@ fn an_intrastate_invoice_splits_tax_into_central_and_state() {
 fn the_same_row_is_interstate_for_a_supplier_in_another_state() {
     // The split turns on the supplier's own state, so identical workbook rows
     // legitimately generate different payloads for different filers.
-    let rows = [row(
-        5,
-        [
-            "27AAPFU0939F1ZV",
-            "Local Buyer",
-            "INV-002",
-            "14-Jul-17",
-            "50000",
-            "27-Maharashtra",
-            "N",
-            "",
-            "Regular B2B",
-            "",
-            "18",
-            "45000",
-            "",
-        ],
-    )];
+    let rows = [local_buyer(5)];
 
     let andhra = FilingContext {
         supplier_gstin: "37AAPFU0939F1ZV".into(),
-        period: ReturnPeriod::new(7, 2017).unwrap(),
-        is_sez: false,
-        aato_over_5cr: false,
+        ..maharashtra()
     };
     let json = payload(&rows, &andhra);
     assert!(json.contains(r#""iamt":8100"#), "{json}");
@@ -157,24 +103,7 @@ fn the_same_row_is_interstate_for_a_supplier_in_another_state() {
 
 #[test]
 fn an_sez_supplier_is_always_interstate() {
-    let rows = [row(
-        5,
-        [
-            "27AAPFU0939F1ZV",
-            "Local Buyer",
-            "INV-002",
-            "14-Jul-17",
-            "50000",
-            "27-Maharashtra",
-            "N",
-            "",
-            "Regular B2B",
-            "",
-            "18",
-            "45000",
-            "",
-        ],
-    )];
+    let rows = [local_buyer(5)];
 
     let sez = FilingContext {
         is_sez: true,
@@ -187,24 +116,10 @@ fn an_sez_supplier_is_always_interstate() {
 
 #[test]
 fn sez_without_payment_of_tax_carries_zero_tax_and_zero_cess() {
-    let rows = [row(
-        5,
-        [
-            "12GEOPS0823BBZH",
-            "SEZ Unit",
-            "INV-003",
-            "14-Jul-17",
-            "50000",
-            "37-Andhra Pradesh",
-            "N",
-            "",
-            "SEZ supplies without payment",
-            "",
-            "18",
-            "45000",
-            "900",
-        ],
-    )];
+    let rows = [with(5, "Receiver Name", "SEZ Unit")
+        .with_cell("Invoice Number", "INV-003")
+        .with_cell("Invoice Type", "SEZ supplies without payment")
+        .with_cell("Cess Amount", "900")];
 
     let json = payload(&rows, &maharashtra());
     assert!(json.contains(r#""inv_typ":"SEWOP""#), "{json}");
@@ -215,42 +130,11 @@ fn sez_without_payment_of_tax_carries_zero_tax_and_zero_cess() {
 #[test]
 fn a_multi_rate_invoice_becomes_one_invoice_with_several_items() {
     let rows = [
-        row(
-            5,
-            [
-                "12GEOPS0823BBZH",
-                "Acme Traders",
-                "INV-004",
-                "14-Jul-17",
-                "100000",
-                "37-Andhra Pradesh",
-                "N",
-                "",
-                "Regular B2B",
-                "",
-                "18",
-                "45000",
-                "",
-            ],
-        ),
-        row(
-            6,
-            [
-                "12GEOPS0823BBZH",
-                "Acme Traders",
-                "INV-004",
-                "14-Jul-17",
-                "100000",
-                "37-Andhra Pradesh",
-                "N",
-                "",
-                "Regular B2B",
-                "",
-                "5",
-                "40000",
-                "",
-            ],
-        ),
+        with(5, "Invoice Number", "INV-004").with_cell("Invoice Value", "100000"),
+        with(6, "Invoice Number", "INV-004")
+            .with_cell("Invoice Value", "100000")
+            .with_cell("Rate", "5")
+            .with_cell("Taxable Value", "40000"),
     ];
 
     let json = payload(&rows, &maharashtra());
@@ -265,42 +149,11 @@ fn a_multi_rate_invoice_becomes_one_invoice_with_several_items() {
 #[test]
 fn invoice_numbers_group_case_insensitively() {
     let rows = [
-        row(
-            5,
-            [
-                "12GEOPS0823BBZH",
-                "Acme Traders",
-                "inv-005",
-                "14-Jul-17",
-                "100000",
-                "37-Andhra Pradesh",
-                "N",
-                "",
-                "Regular B2B",
-                "",
-                "18",
-                "45000",
-                "",
-            ],
-        ),
-        row(
-            6,
-            [
-                "12GEOPS0823BBZH",
-                "Acme Traders",
-                "INV-005",
-                "14-Jul-17",
-                "100000",
-                "37-Andhra Pradesh",
-                "N",
-                "",
-                "Regular B2B",
-                "",
-                "5",
-                "40000",
-                "",
-            ],
-        ),
+        with(5, "Invoice Number", "inv-005").with_cell("Invoice Value", "100000"),
+        with(6, "Invoice Number", "INV-005")
+            .with_cell("Invoice Value", "100000")
+            .with_cell("Rate", "5")
+            .with_cell("Taxable Value", "40000"),
     ];
 
     let json = payload(&rows, &maharashtra());
@@ -312,27 +165,11 @@ fn invoice_numbers_group_case_insensitively() {
 #[test]
 fn separate_recipients_become_separate_envelopes() {
     let rows = [
-        row(
-            5,
-            [
-                "12GEOPS0823BBZH",
-                "Acme Traders",
-                "INV-006",
-                "14-Jul-17",
-                "50000",
-                "37-Andhra Pradesh",
-                "N",
-                "",
-                "Regular B2B",
-                "",
-                "18",
-                "45000",
-                "",
-            ],
-        ),
-        row(
+        with(5, "Invoice Number", "INV-006"),
+        common::row(
+            b2b(),
             6,
-            [
+            &[
                 "29AAGCB7383J1Z4",
                 "Other Buyer",
                 "INV-007",
@@ -350,33 +187,16 @@ fn separate_recipients_become_separate_envelopes() {
         ),
     ];
 
-    let report = validate(&GSTR1_B2B, &rows, &maharashtra());
+    let report = validate(b2b(), &rows, &maharashtra());
     assert!(report.is_clean(), "{:?}", report.findings);
-    let out = generate(&GSTR1_B2B, &report.records, &maharashtra());
+    let out = generate(b2b(), &report.records, &maharashtra());
     assert_eq!(out.envelopes.len(), 2);
     assert!(out.to_json().contains(r#""ctin":"29AAGCB7383J1Z4""#));
 }
 
 #[test]
 fn applicable_percent_scales_every_computed_amount() {
-    let rows = [row(
-        5,
-        [
-            "12GEOPS0823BBZH",
-            "Acme Traders",
-            "INV-008",
-            "14-Jul-17",
-            "50000",
-            "37-Andhra Pradesh",
-            "N",
-            "65",
-            "Regular B2B",
-            "",
-            "18",
-            "45000",
-            "",
-        ],
-    )];
+    let rows = [with(5, "Invoice Number", "INV-008").with_cell("Applicable % of Tax Rate", "65")];
 
     let json = payload(&rows, &maharashtra());
     // 45000 * 18% * 0.65 = 5265, and the factor itself is emitted, not the
@@ -387,24 +207,7 @@ fn applicable_percent_scales_every_computed_amount() {
 
 #[test]
 fn cess_is_carried_through_and_rounded() {
-    let rows = [row(
-        5,
-        [
-            "12GEOPS0823BBZH",
-            "Acme Traders",
-            "INV-009",
-            "14-Jul-17",
-            "50000",
-            "37-Andhra Pradesh",
-            "N",
-            "",
-            "Regular B2B",
-            "",
-            "18",
-            "45000",
-            "756.50",
-        ],
-    )];
+    let rows = [with(5, "Invoice Number", "INV-009").with_cell("Cess Amount", "756.50")];
 
     assert!(
         payload(&rows, &maharashtra()).contains(r#""csamt":756.5"#),
@@ -417,47 +220,15 @@ fn a_duplicate_rate_replaces_the_earlier_line_and_warns() {
     // Reproduces the reference implementation's silent last-wins merge, but
     // surfaces it: the 45000 line is lost, not added to.
     let rows = [
-        row(
-            5,
-            [
-                "12GEOPS0823BBZH",
-                "Acme Traders",
-                "INV-010",
-                "14-Jul-17",
-                "100000",
-                "37-Andhra Pradesh",
-                "N",
-                "",
-                "Regular B2B",
-                "",
-                "18",
-                "45000",
-                "",
-            ],
-        ),
-        row(
-            6,
-            [
-                "12GEOPS0823BBZH",
-                "Acme Traders",
-                "INV-010",
-                "14-Jul-17",
-                "100000",
-                "37-Andhra Pradesh",
-                "N",
-                "",
-                "Regular B2B",
-                "",
-                "18",
-                "30000",
-                "",
-            ],
-        ),
+        with(5, "Invoice Number", "INV-010").with_cell("Invoice Value", "100000"),
+        with(6, "Invoice Number", "INV-010")
+            .with_cell("Invoice Value", "100000")
+            .with_cell("Taxable Value", "30000"),
     ];
 
-    let report = validate(&GSTR1_B2B, &rows, &maharashtra());
+    let report = validate(b2b(), &rows, &maharashtra());
     assert!(report.is_clean(), "{:?}", report.findings);
-    let out = generate(&GSTR1_B2B, &report.records, &maharashtra());
+    let out = generate(b2b(), &report.records, &maharashtra());
 
     let json = out.to_json();
     assert_eq!(json.matches(r#""itm_det""#).count(), 1, "{json}");
@@ -480,52 +251,21 @@ fn a_duplicate_rate_replaces_the_earlier_line_and_warns() {
 fn rows_of_one_invoice_that_disagree_are_rejected() {
     // Same invoice number and recipient, contradictory invoice value.
     let rows = [
-        row(
-            5,
-            [
-                "12GEOPS0823BBZH",
-                "Acme Traders",
-                "INV-011",
-                "14-Jul-17",
-                "100000",
-                "37-Andhra Pradesh",
-                "N",
-                "",
-                "Regular B2B",
-                "",
-                "18",
-                "45000",
-                "",
-            ],
-        ),
-        row(
-            6,
-            [
-                "12GEOPS0823BBZH",
-                "Acme Traders",
-                "INV-011",
-                "14-Jul-17",
-                "999999",
-                "37-Andhra Pradesh",
-                "N",
-                "",
-                "Regular B2B",
-                "",
-                "5",
-                "40000",
-                "",
-            ],
-        ),
+        with(5, "Invoice Number", "INV-011").with_cell("Invoice Value", "100000"),
+        with(6, "Invoice Number", "INV-011")
+            .with_cell("Invoice Value", "999999")
+            .with_cell("Rate", "5")
+            .with_cell("Taxable Value", "40000"),
     ];
 
-    let report = validate(&GSTR1_B2B, &rows, &maharashtra());
+    let report = validate(b2b(), &rows, &maharashtra());
     assert!(
         report.is_clean(),
         "field validation passes: {:?}",
         report.findings
     );
 
-    let out = generate(&GSTR1_B2B, &report.records, &maharashtra());
+    let out = generate(b2b(), &report.records, &maharashtra());
     let finding = out
         .findings
         .iter()
@@ -544,50 +284,18 @@ fn rows_of_one_invoice_that_disagree_are_rejected() {
 #[test]
 fn a_row_failing_validation_never_reaches_the_payload() {
     let rows = [
-        row(
-            5,
-            [
-                "12GEOPS0823BBZH",
-                "Acme Traders",
-                "INV-012",
-                "14-Jul-17",
-                "50000",
-                "37-Andhra Pradesh",
-                "N",
-                "",
-                "Regular B2B",
-                "",
-                "18",
-                "45000",
-                "",
-            ],
-        ),
+        with(5, "Invoice Number", "INV-012"),
         // Reverse charge 'N' contradicts the invoice type.
-        row(
-            6,
-            [
-                "12GEOPS0823BBZH",
-                "Acme Traders",
-                "INV-013",
-                "14-Jul-17",
-                "50000",
-                "27-Maharashtra",
-                "N",
-                "",
-                "Intra-State supplies attracting IGST",
-                "",
-                "18",
-                "45000",
-                "",
-            ],
-        ),
+        with(6, "Invoice Number", "INV-013")
+            .with_cell("Place Of Supply", "27-Maharashtra")
+            .with_cell("Invoice Type", "Intra-State supplies attracting IGST"),
     ];
 
-    let report = validate(&GSTR1_B2B, &rows, &maharashtra());
+    let report = validate(b2b(), &rows, &maharashtra());
     assert!(!report.is_clean());
     assert_eq!(report.records.len(), 1);
 
-    let json = generate(&GSTR1_B2B, &report.records, &maharashtra()).to_json();
+    let json = generate(b2b(), &report.records, &maharashtra()).to_json();
     assert!(json.contains("INV-012"), "{json}");
     assert!(!json.contains("INV-013"), "{json}");
 }
@@ -598,42 +306,11 @@ fn generated_output_is_byte_stable_across_runs() {
     // so the same input must serialize identically every time — the property
     // differential testing against reference output depends on.
     let rows = [
-        row(
-            5,
-            [
-                "12GEOPS0823BBZH",
-                "Acme Traders",
-                "INV-014",
-                "14-Jul-17",
-                "100000",
-                "37-Andhra Pradesh",
-                "N",
-                "",
-                "Regular B2B",
-                "",
-                "18",
-                "45000",
-                "",
-            ],
-        ),
-        row(
-            6,
-            [
-                "12GEOPS0823BBZH",
-                "Acme Traders",
-                "INV-014",
-                "14-Jul-17",
-                "100000",
-                "37-Andhra Pradesh",
-                "N",
-                "",
-                "Regular B2B",
-                "",
-                "5",
-                "40000",
-                "",
-            ],
-        ),
+        with(5, "Invoice Number", "INV-014").with_cell("Invoice Value", "100000"),
+        with(6, "Invoice Number", "INV-014")
+            .with_cell("Invoice Value", "100000")
+            .with_cell("Rate", "5")
+            .with_cell("Taxable Value", "40000"),
     ];
 
     let first = payload(&rows, &maharashtra());

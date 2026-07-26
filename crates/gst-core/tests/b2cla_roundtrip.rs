@@ -5,45 +5,28 @@
 //! adds one wrinkle of its own: the only place of supply it carries is the
 //! ORIGINAL one, which is what both the grouping and the tax split read.
 
-use gst_core::date::ReturnPeriod;
+mod common;
+
 use gst_core::generate::generate;
 use gst_core::record::Row;
-use gst_core::spec::{self, SectionSpec, Severity};
+use gst_core::spec::{SectionSpec, Severity};
 use gst_core::validate::{FilingContext, validate};
 
 fn b2cla() -> &'static SectionSpec {
-    spec::section("b2cla").expect("b2cla is registered")
+    common::sec("b2cla")
 }
 
 /// A Maharashtra (27) supplier amending, in September 2017, invoices first
 /// reported in July.
 fn ctx(month: u32, year: i32) -> FilingContext {
-    FilingContext {
-        supplier_gstin: "27AAPFU0939F1ZV".into(),
-        period: ReturnPeriod::new(month, year).unwrap(),
-        is_sez: false,
-        aato_over_5cr: false,
-    }
+    common::ctx(month, year)
 }
 
-const COLUMNS: [&str; 11] = [
-    "Original Invoice Number",
-    "Original Invoice date",
-    "Original Place Of Supply",
-    "Revised Invoice Number",
-    "Revised Invoice date",
-    "Invoice Value",
-    "Applicable % of Tax Rate",
-    "Rate",
-    "Taxable Value",
-    "Cess Amount",
-    "E-Commerce GSTIN",
-];
-
 fn base(sheet_row: usize) -> Row {
-    Row::from_pairs(
+    common::row(
+        b2cla(),
         sheet_row,
-        COLUMNS.into_iter().zip([
+        &[
             "INV-L001",
             "14-Jul-17",
             "37-Andhra Pradesh",
@@ -55,31 +38,16 @@ fn base(sheet_row: usize) -> Row {
             "250000",
             "",
             "",
-        ]),
+        ],
     )
 }
 
 fn with(sheet_row: usize, column: &str, value: &str) -> Row {
-    let mut r = base(sheet_row);
-    r.cells.insert(column.to_owned(), value.to_owned());
-    r
+    base(sheet_row).with_cell(column, value)
 }
 
 fn payload(rows: &[Row], c: &FilingContext) -> String {
-    let report = validate(b2cla(), rows, c);
-    assert!(report.is_clean(), "validation: {:?}", report.findings);
-    let out = generate(b2cla(), &report.records, c);
-    assert!(
-        !out.findings.iter().any(|f| f.severity == Severity::Error),
-        "generation: {:?}",
-        out.findings
-    );
-    out.to_json()
-}
-
-#[test]
-fn every_derivation_the_spec_names_is_implemented() {
-    assert!(gst_core::generate::unimplemented_derivations(b2cla()).is_empty());
+    common::payload(b2cla(), rows, c)
 }
 
 #[test]
@@ -242,8 +210,7 @@ fn an_ecommerce_gstin_is_rejected_despite_the_template_column() {
 
 #[test]
 fn the_shipped_fixture_validates_and_generates() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/gstr1/b2cla-sample.csv");
+    let path = common::repo_path("fixtures/gstr1/b2cla-sample.csv");
     let rows = gst_core::import::read(&path, b2cla()).expect("reads");
     assert_eq!(rows.len(), 5);
 

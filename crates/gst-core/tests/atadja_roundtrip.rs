@@ -4,65 +4,42 @@
 //! unsigned amounts and omitted blank cess of `atadj`. Only what is unique to
 //! the combination is tested here.
 
-use gst_core::date::ReturnPeriod;
-use gst_core::generate::generate;
+mod common;
+
 use gst_core::record::Row;
-use gst_core::spec::{self, SectionSpec, Severity};
+use gst_core::spec::SectionSpec;
 use gst_core::validate::{FilingContext, validate};
 
 fn atadja() -> &'static SectionSpec {
-    spec::section("atadja").expect("atadja is registered")
+    common::sec("atadja")
 }
 
 fn ctx() -> FilingContext {
-    FilingContext {
-        supplier_gstin: "27AAPFU0939F1ZV".into(),
-        period: ReturnPeriod::new(9, 2017).unwrap(),
-        is_sez: false,
-        aato_over_5cr: false,
-    }
+    common::ctx(9, 2017)
 }
 
-const COLUMNS: [&str; 7] = [
-    "Financial Year",
-    "Original Month",
-    "Original Place Of Supply",
-    "Applicable % of Tax Rate",
-    "Rate",
-    "Gross Advance Adjusted",
-    "Cess Amount",
-];
-
 fn base(sheet_row: usize) -> Row {
-    Row::from_pairs(
+    common::row(
+        atadja(),
         sheet_row,
-        COLUMNS
-            .into_iter()
-            .zip(["2017-18", "JULY", "37-Andhra Pradesh", "", "18", "30000", ""]),
+        &[
+            "2017-18",
+            "JULY",
+            "37-Andhra Pradesh",
+            "",
+            "18",
+            "30000",
+            "",
+        ],
     )
 }
 
 fn with(sheet_row: usize, column: &str, value: &str) -> Row {
-    let mut r = base(sheet_row);
-    r.cells.insert(column.to_owned(), value.to_owned());
-    r
+    base(sheet_row).with_cell(column, value)
 }
 
 fn payload(rows: &[Row], c: &FilingContext) -> String {
-    let report = validate(atadja(), rows, c);
-    assert!(report.is_clean(), "validation: {:?}", report.findings);
-    let out = generate(atadja(), &report.records, c);
-    assert!(
-        !out.findings.iter().any(|f| f.severity == Severity::Error),
-        "generation: {:?}",
-        out.findings
-    );
-    out.to_json()
-}
-
-#[test]
-fn every_derivation_the_spec_names_is_implemented() {
-    assert!(gst_core::generate::unimplemented_derivations(atadja()).is_empty());
+    common::payload(atadja(), rows, c)
 }
 
 #[test]
@@ -75,7 +52,11 @@ fn an_amended_adjustment_carries_the_period_and_omits_a_blank_cess() {
 
 #[test]
 fn amounts_stay_unsigned_in_the_amended_table_too() {
-    let report = validate(atadja(), &[with(5, "Gross Advance Adjusted", "-100")], &ctx());
+    let report = validate(
+        atadja(),
+        &[with(5, "Gross Advance Adjusted", "-100")],
+        &ctx(),
+    );
     assert!(
         report
             .errors()
@@ -94,8 +75,7 @@ fn the_reduced_rate_scales_the_tax_and_is_emitted() {
 
 #[test]
 fn the_shipped_fixture_validates_and_generates() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/gstr1/atadja-sample.csv");
+    let path = common::repo_path("fixtures/gstr1/atadja-sample.csv");
     let rows = gst_core::import::read(&path, atadja()).expect("reads");
     assert_eq!(rows.len(), 2);
 

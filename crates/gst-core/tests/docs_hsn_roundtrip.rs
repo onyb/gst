@@ -5,49 +5,31 @@
 //! positional payload number driven by a master's ORDER, and tax that the filer
 //! ENTERS rather than the engine deriving.
 
-use gst_core::date::ReturnPeriod;
-use gst_core::generate::generate;
+mod common;
+
 use gst_core::record::Row;
-use gst_core::spec::{self, SectionSpec, Severity};
+use gst_core::spec::SectionSpec;
 use gst_core::validate::{FilingContext, validate};
 
 fn section(code: &str) -> &'static SectionSpec {
-    spec::section(code).unwrap_or_else(|| panic!("{code} is registered"))
+    common::sec(code)
 }
 
 fn ctx(month: u32, year: i32, aato_over_5cr: bool) -> FilingContext {
     FilingContext {
-        supplier_gstin: "27AAPFU0939F1ZV".into(),
-        period: ReturnPeriod::new(month, year).unwrap(),
-        is_sez: false,
         aato_over_5cr,
+        ..common::ctx(month, year)
     }
 }
 
 fn payload(spec: &SectionSpec, rows: &[Row], c: &FilingContext) -> String {
-    let report = validate(spec, rows, c);
-    assert!(report.is_clean(), "validation: {:?}", report.findings);
-    let out = generate(spec, &report.records, c);
-    assert!(
-        !out.findings.iter().any(|f| f.severity == Severity::Error),
-        "generation: {:?}",
-        out.findings
-    );
-    out.to_json()
+    common::payload(spec, rows, c)
 }
 
 // ---------------------------------------------------------------- doc_issue
 
-const DOC_COLUMNS: [&str; 5] = [
-    "Nature of Document",
-    "Sr. No. From",
-    "Sr. No. To",
-    "Total Number",
-    "Cancelled",
-];
-
 fn doc_row(sheet_row: usize, values: [&str; 5]) -> Row {
-    Row::from_pairs(sheet_row, DOC_COLUMNS.into_iter().zip(values))
+    common::row(section("doc_issue"), sheet_row, &values)
 }
 
 fn doc_base(sheet_row: usize) -> Row {
@@ -152,22 +134,8 @@ fn several_ranges_for_one_nature_collapse_into_one_record() {
 
 // ------------------------------------------------------------------- hsn
 
-const HSN_COLUMNS: [&str; 11] = [
-    "HSN",
-    "Description",
-    "UQC",
-    "Total Quantity",
-    "Total Value",
-    "Rate",
-    "Taxable Value",
-    "Integrated Tax Amount",
-    "Central Tax Amount",
-    "State/UT Tax Amount",
-    "Cess Amount",
-];
-
 fn hsn_row(sheet_row: usize, values: [&str; 11]) -> Row {
-    Row::from_pairs(sheet_row, HSN_COLUMNS.into_iter().zip(values))
+    common::row(section("hsn(b2b)"), sheet_row, &values)
 }
 
 fn hsn_base(sheet_row: usize) -> Row {
@@ -364,8 +332,7 @@ fn total_value_is_read_but_never_emitted() {
 
 #[test]
 fn records_carry_a_real_serial_not_the_references_constant_one() {
-    let mut second = hsn_base(6);
-    second.cells.insert("HSN".into(), "0102".into());
+    let second = hsn_base(6).with_cell("HSN", "0102");
     let json = payload(
         section("hsn(b2b)"),
         &[hsn_base(5), second],
@@ -382,9 +349,7 @@ fn the_shipped_fixtures_validate_and_generate() {
         ("hsn(b2b)", "hsn-b2b-sample.csv"),
         ("hsn(b2c)", "hsn-b2c-sample.csv"),
     ] {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../fixtures/gstr1")
-            .join(file);
+        let path = common::repo_path("fixtures/gstr1").join(file);
         let spec = section(code);
         let rows = gst_core::import::read(&path, spec).expect("reads");
         assert!(!rows.is_empty(), "{file} has rows");

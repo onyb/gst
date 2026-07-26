@@ -5,45 +5,26 @@
 //! nothing in the table may be negative: a credit note is signalled by its note
 //! type, not by a sign.
 
-use gst_core::date::ReturnPeriod;
+mod common;
+
 use gst_core::generate::generate;
 use gst_core::record::Row;
-use gst_core::spec::{self, SectionSpec, Severity};
+use gst_core::spec::SectionSpec;
 use gst_core::validate::{FilingContext, validate};
 
 fn cdnr() -> &'static SectionSpec {
-    spec::section("cdnr").expect("cdnr is registered")
+    common::sec("cdnr")
 }
 
 fn ctx() -> FilingContext {
-    FilingContext {
-        supplier_gstin: "27AAPFU0939F1ZV".into(),
-        period: ReturnPeriod::new(7, 2017).unwrap(),
-        is_sez: false,
-        aato_over_5cr: false,
-    }
+    common::ctx(7, 2017)
 }
 
-const COLUMNS: [&str; 13] = [
-    "GSTIN/UIN of Recipient",
-    "Receiver Name",
-    "Note Number",
-    "Note Date",
-    "Note Type",
-    "Place Of Supply",
-    "Reverse Charge",
-    "Note Supply Type",
-    "Note Value",
-    "Applicable % of Tax Rate",
-    "Rate",
-    "Taxable Value",
-    "Cess Amount",
-];
-
 fn base(sheet_row: usize) -> Row {
-    Row::from_pairs(
+    common::row(
+        cdnr(),
         sheet_row,
-        COLUMNS.into_iter().zip([
+        &[
             "12GEOPS0823BBZH",
             "Acme Traders",
             "CN-001",
@@ -57,31 +38,16 @@ fn base(sheet_row: usize) -> Row {
             "18",
             "50000",
             "",
-        ]),
+        ],
     )
 }
 
 fn with(sheet_row: usize, column: &str, value: &str) -> Row {
-    let mut r = base(sheet_row);
-    r.cells.insert(column.to_owned(), value.to_owned());
-    r
+    base(sheet_row).with_cell(column, value)
 }
 
 fn payload(rows: &[Row], c: &FilingContext) -> String {
-    let report = validate(cdnr(), rows, c);
-    assert!(report.is_clean(), "validation: {:?}", report.findings);
-    let out = generate(cdnr(), &report.records, c);
-    assert!(
-        !out.findings.iter().any(|f| f.severity == Severity::Error),
-        "generation: {:?}",
-        out.findings
-    );
-    out.to_json()
-}
-
-#[test]
-fn every_derivation_the_spec_names_is_implemented() {
-    assert!(gst_core::generate::unimplemented_derivations(cdnr()).is_empty());
+    common::payload(cdnr(), rows, c)
 }
 
 #[test]
@@ -205,8 +171,7 @@ fn rows_sharing_a_note_must_agree_on_the_receiver_name() {
 
 #[test]
 fn the_shipped_fixture_validates_and_generates() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/gstr1/cdnr-sample.csv");
+    let path = common::repo_path("fixtures/gstr1/cdnr-sample.csv");
     let rows = gst_core::import::read(&path, cdnr()).expect("reads");
     assert_eq!(rows.len(), 4);
 

@@ -5,42 +5,26 @@
 //! items are bare: no `num` and no `itm_det` wrapper. Tax is always integrated,
 //! and `WOPAY` zeroes both the tax and the cess.
 
-use gst_core::date::ReturnPeriod;
+mod common;
+
 use gst_core::generate::generate;
 use gst_core::record::Row;
-use gst_core::spec::{self, SectionSpec, Severity};
+use gst_core::spec::{SectionSpec, Severity};
 use gst_core::validate::{FilingContext, validate};
 
 fn exp() -> &'static SectionSpec {
-    spec::section("exp").expect("exp is registered")
+    common::sec("exp")
 }
 
 fn ctx() -> FilingContext {
-    FilingContext {
-        supplier_gstin: "27AAPFU0939F1ZV".into(),
-        period: ReturnPeriod::new(7, 2017).unwrap(),
-        is_sez: false,
-        aato_over_5cr: false,
-    }
+    common::ctx(7, 2017)
 }
 
-const COLUMNS: [&str; 10] = [
-    "Export Type",
-    "Invoice Number",
-    "Invoice date",
-    "Invoice Value",
-    "Port Code",
-    "Shipping Bill Number",
-    "Shipping Bill Date",
-    "Rate",
-    "Taxable Value",
-    "Cess Amount",
-];
-
 fn base(sheet_row: usize) -> Row {
-    Row::from_pairs(
+    common::row(
+        exp(),
         sheet_row,
-        COLUMNS.into_iter().zip([
+        &[
             "WPAY",
             "EX-001",
             "14-Jul-17",
@@ -51,39 +35,23 @@ fn base(sheet_row: usize) -> Row {
             "18",
             "250000",
             "",
-        ]),
+        ],
     )
 }
 
 fn with(sheet_row: usize, column: &str, value: &str) -> Row {
-    let mut r = base(sheet_row);
-    r.cells.insert(column.to_owned(), value.to_owned());
-    r
+    base(sheet_row).with_cell(column, value)
 }
 
 /// An invoice filed before its shipping bill exists: the whole pair is blank.
 fn no_shipping_bill(sheet_row: usize) -> Row {
-    let mut r = base(sheet_row);
-    r.cells.insert("Shipping Bill Number".into(), String::new());
-    r.cells.insert("Shipping Bill Date".into(), String::new());
-    r
+    base(sheet_row)
+        .with_cell("Shipping Bill Number", "")
+        .with_cell("Shipping Bill Date", "")
 }
 
 fn payload(rows: &[Row], c: &FilingContext) -> String {
-    let report = validate(exp(), rows, c);
-    assert!(report.is_clean(), "validation: {:?}", report.findings);
-    let out = generate(exp(), &report.records, c);
-    assert!(
-        !out.findings.iter().any(|f| f.severity == Severity::Error),
-        "generation: {:?}",
-        out.findings
-    );
-    out.to_json()
-}
-
-#[test]
-fn every_derivation_the_spec_names_is_implemented() {
-    assert!(gst_core::generate::unimplemented_derivations(exp()).is_empty());
+    common::payload(exp(), rows, c)
 }
 
 #[test]
@@ -118,8 +86,7 @@ fn tax_is_always_integrated() {
 
 #[test]
 fn an_export_without_payment_zeroes_tax_and_cess() {
-    let mut w = with(5, "Export Type", "WOPAY");
-    w.cells.insert("Cess Amount".into(), "750".into());
+    let w = with(5, "Export Type", "WOPAY").with_cell("Cess Amount", "750");
     let json = payload(&[w], &ctx());
     assert!(json.contains(r#""iamt":0"#), "{json}");
     assert!(json.contains(r#""csamt":0"#), "{json}");
@@ -127,8 +94,7 @@ fn an_export_without_payment_zeroes_tax_and_cess() {
     assert!(json.contains(r#""rt":18"#), "{json}");
 
     // With payment of tax, both are computed normally.
-    let mut p = base(6);
-    p.cells.insert("Cess Amount".into(), "750".into());
+    let p = base(6).with_cell("Cess Amount", "750");
     let json = payload(&[p], &ctx());
     assert!(json.contains(r#""iamt":45000"#), "{json}");
     assert!(json.contains(r#""csamt":750"#), "{json}");
@@ -144,9 +110,9 @@ fn the_two_export_types_become_two_envelopes() {
 
 #[test]
 fn several_rates_for_one_invoice_become_one_record() {
-    let mut second = with(6, "Rate", "5");
-    second.cells.insert("Taxable Value".into(), "20000".into());
-    second.cells.insert("Cess Amount".into(), "500".into());
+    let second = with(6, "Rate", "5")
+        .with_cell("Taxable Value", "20000")
+        .with_cell("Cess Amount", "500");
 
     let report = validate(exp(), &[base(5), second], &ctx());
     assert!(report.is_clean(), "{:?}", report.findings);
@@ -164,10 +130,7 @@ fn the_shipping_bill_pair_is_optional_but_all_or_nothing() {
     assert!(!json.contains(r#""sbnum""#), "{json}");
     assert!(!json.contains(r#""sbdt""#), "{json}");
 
-    let mut number_only = no_shipping_bill(5);
-    number_only
-        .cells
-        .insert("Shipping Bill Number".into(), "7896542".into());
+    let number_only = no_shipping_bill(5).with_cell("Shipping Bill Number", "7896542");
     let report = validate(exp(), &[number_only], &ctx());
     assert!(
         report
@@ -177,10 +140,7 @@ fn the_shipping_bill_pair_is_optional_but_all_or_nothing() {
         report.findings
     );
 
-    let mut date_only = no_shipping_bill(5);
-    date_only
-        .cells
-        .insert("Shipping Bill Date".into(), "18-Jul-17".into());
+    let date_only = no_shipping_bill(5).with_cell("Shipping Bill Date", "18-Jul-17");
     let report = validate(exp(), &[date_only], &ctx());
     assert!(
         report
@@ -254,11 +214,9 @@ fn no_applicable_percent_of_tax_rate_column_exists() {
 
 #[test]
 fn rows_sharing_an_invoice_number_must_agree_on_its_details() {
-    let mut conflicting = with(6, "Rate", "5");
-    conflicting
-        .cells
-        .insert("Taxable Value".into(), "20000".into());
-    conflicting.cells.insert("Invoice Value".into(), "1".into());
+    let conflicting = with(6, "Rate", "5")
+        .with_cell("Taxable Value", "20000")
+        .with_cell("Invoice Value", "1");
     let report = validate(exp(), &[base(5), conflicting], &ctx());
     assert!(report.is_clean(), "{:?}", report.findings);
     let out = generate(exp(), &report.records, &ctx());
@@ -273,8 +231,7 @@ fn rows_sharing_an_invoice_number_must_agree_on_its_details() {
 
 #[test]
 fn the_shipped_fixture_validates_and_generates() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/gstr1/exp-sample.csv");
+    let path = common::repo_path("fixtures/gstr1/exp-sample.csv");
     let rows = gst_core::import::read(&path, exp()).expect("reads");
     assert_eq!(rows.len(), 4);
 

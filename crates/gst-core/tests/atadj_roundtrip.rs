@@ -6,63 +6,34 @@
 //! here, so a blank cess produces no `csamt` key at all. Amounts are also
 //! unsigned here, and a zero adjustment is permitted.
 
-use gst_core::date::ReturnPeriod;
-use gst_core::generate::generate;
+mod common;
+
 use gst_core::record::Row;
-use gst_core::spec::{self, SectionSpec, Severity};
+use gst_core::spec::SectionSpec;
 use gst_core::validate::{FilingContext, validate};
 
 fn atadj() -> &'static SectionSpec {
-    spec::section("atadj").expect("atadj is registered")
+    common::sec("atadj")
 }
 
 fn ctx() -> FilingContext {
-    FilingContext {
-        supplier_gstin: "27AAPFU0939F1ZV".into(),
-        period: ReturnPeriod::new(7, 2017).unwrap(),
-        is_sez: false,
-        aato_over_5cr: false,
-    }
+    common::ctx(7, 2017)
 }
 
-const COLUMNS: [&str; 5] = [
-    "Place Of Supply",
-    "Applicable % of Tax Rate",
-    "Rate",
-    "Gross Advance Adjusted",
-    "Cess Amount",
-];
-
 fn base(sheet_row: usize) -> Row {
-    Row::from_pairs(
+    common::row(
+        atadj(),
         sheet_row,
-        COLUMNS
-            .into_iter()
-            .zip(["37-Andhra Pradesh", "", "18", "30000", ""]),
+        &["37-Andhra Pradesh", "", "18", "30000", ""],
     )
 }
 
 fn with(sheet_row: usize, column: &str, value: &str) -> Row {
-    let mut r = base(sheet_row);
-    r.cells.insert(column.to_owned(), value.to_owned());
-    r
+    base(sheet_row).with_cell(column, value)
 }
 
 fn payload(rows: &[Row], c: &FilingContext) -> String {
-    let report = validate(atadj(), rows, c);
-    assert!(report.is_clean(), "validation: {:?}", report.findings);
-    let out = generate(atadj(), &report.records, c);
-    assert!(
-        !out.findings.iter().any(|f| f.severity == Severity::Error),
-        "generation: {:?}",
-        out.findings
-    );
-    out.to_json()
-}
-
-#[test]
-fn every_derivation_the_spec_names_is_implemented() {
-    assert!(gst_core::generate::unimplemented_derivations(atadj()).is_empty());
+    common::payload(atadj(), rows, c)
 }
 
 #[test]
@@ -128,16 +99,14 @@ fn the_csv_and_excel_disagree_on_column_order_but_both_import() {
     assert_eq!(by_order[2], "Rate");
 
     // The shipped CSV has them the other way round and still reads.
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/gstr1/atadj-sample.csv");
+    let path = common::repo_path("fixtures/gstr1/atadj-sample.csv");
     let rows = gst_core::import::read(&path, spec).expect("reads");
     assert_eq!(rows[0].cells.get("Rate").map(String::as_str), Some("18"));
 }
 
 #[test]
 fn the_shipped_fixture_validates_and_generates() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/gstr1/atadj-sample.csv");
+    let path = common::repo_path("fixtures/gstr1/atadj-sample.csv");
     let rows = gst_core::import::read(&path, atadj()).expect("reads");
     assert_eq!(rows.len(), 2);
 

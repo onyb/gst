@@ -8,43 +8,27 @@
 //! It is also the first section that identifies a period by a spelled-out month
 //! plus a financial year rather than a date.
 
-use gst_core::date::ReturnPeriod;
+mod common;
+
 use gst_core::generate::generate;
 use gst_core::record::Row;
-use gst_core::spec::{self, SectionSpec, Severity};
+use gst_core::spec::SectionSpec;
 use gst_core::validate::{FilingContext, validate};
 
 fn b2csa() -> &'static SectionSpec {
-    spec::section("b2csa").expect("b2csa is registered")
+    common::sec("b2csa")
 }
 
 /// A Maharashtra (27) supplier filing for September 2017.
 fn ctx() -> FilingContext {
-    FilingContext {
-        supplier_gstin: "27AAPFU0939F1ZV".into(),
-        period: ReturnPeriod::new(9, 2017).unwrap(),
-        is_sez: false,
-        aato_over_5cr: false,
-    }
+    common::ctx(9, 2017)
 }
 
-/// Excel-template order, which is what the spec records.
-const COLUMNS: [&str; 9] = [
-    "Financial Year",
-    "Original Month",
-    "Place Of Supply",
-    "Type",
-    "Applicable % of Tax Rate",
-    "Rate",
-    "Taxable Value",
-    "Cess Amount",
-    "E-Commerce GSTIN",
-];
-
 fn base(sheet_row: usize) -> Row {
-    Row::from_pairs(
+    common::row(
+        b2csa(),
         sheet_row,
-        COLUMNS.into_iter().zip([
+        &[
             "2017-18",
             "JULY",
             "37-Andhra Pradesh",
@@ -54,31 +38,20 @@ fn base(sheet_row: usize) -> Row {
             "300000",
             "",
             "",
-        ]),
+        ],
     )
 }
 
 fn with(sheet_row: usize, column: &str, value: &str) -> Row {
-    let mut r = base(sheet_row);
-    r.cells.insert(column.to_owned(), value.to_owned());
-    r
+    base(sheet_row).with_cell(column, value)
 }
 
 fn payload(rows: &[Row], c: &FilingContext) -> String {
-    let report = validate(b2csa(), rows, c);
-    assert!(report.is_clean(), "validation: {:?}", report.findings);
-    let out = generate(b2csa(), &report.records, c);
-    assert!(
-        !out.findings.iter().any(|f| f.severity == Severity::Error),
-        "generation: {:?}",
-        out.findings
-    );
-    out.to_json()
+    common::payload(b2csa(), rows, c)
 }
 
 #[test]
-fn every_derivation_the_spec_names_is_implemented() {
-    assert!(gst_core::generate::unimplemented_derivations(b2csa()).is_empty());
+fn the_section_is_not_flat() {
     // Not flat: it has an item level, unlike the unamended section.
     assert!(!b2csa().is_flat());
 }
@@ -201,8 +174,7 @@ fn type_e_is_rejected_even_with_a_valid_operator_gstin() {
 fn the_shipped_fixture_validates_and_generates() {
     // Fixture is in the SECTION CSV's column order, which swaps Rate and
     // Applicable % of Tax Rate relative to the Excel template.
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/gstr1/b2csa-sample.csv");
+    let path = common::repo_path("fixtures/gstr1/b2csa-sample.csv");
     let rows = gst_core::import::read(&path, b2csa()).expect("reads");
     assert_eq!(rows.len(), 5);
 

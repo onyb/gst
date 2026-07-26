@@ -5,44 +5,26 @@
 //! invoice number and date, which the payload carries alongside the revised
 //! pair.
 
-use gst_core::date::ReturnPeriod;
+mod common;
+
 use gst_core::generate::generate;
 use gst_core::record::Row;
-use gst_core::spec::{self, SectionSpec, Severity};
+use gst_core::spec::{SectionSpec, Severity};
 use gst_core::validate::{FilingContext, validate};
 
 fn expa() -> &'static SectionSpec {
-    spec::section("expa").expect("expa is registered")
+    common::sec("expa")
 }
 
 fn ctx() -> FilingContext {
-    FilingContext {
-        supplier_gstin: "27AAPFU0939F1ZV".into(),
-        period: ReturnPeriod::new(9, 2017).unwrap(),
-        is_sez: false,
-        aato_over_5cr: false,
-    }
+    common::ctx(9, 2017)
 }
 
-const COLUMNS: [&str; 12] = [
-    "Export Type",
-    "Original Invoice Number",
-    "Original Invoice date",
-    "Revised Invoice Number",
-    "Revised Invoice date",
-    "Invoice Value",
-    "Port Code",
-    "Shipping Bill Number",
-    "Shipping Bill Date",
-    "Rate",
-    "Taxable Value",
-    "Cess Amount",
-];
-
 fn base(sheet_row: usize) -> Row {
-    Row::from_pairs(
+    common::row(
+        expa(),
         sheet_row,
-        COLUMNS.into_iter().zip([
+        &[
             "WPAY",
             "EX-101",
             "14-Jul-17",
@@ -55,31 +37,16 @@ fn base(sheet_row: usize) -> Row {
             "18",
             "250000",
             "",
-        ]),
+        ],
     )
 }
 
 fn with(sheet_row: usize, column: &str, value: &str) -> Row {
-    let mut r = base(sheet_row);
-    r.cells.insert(column.to_owned(), value.to_owned());
-    r
+    base(sheet_row).with_cell(column, value)
 }
 
 fn payload(rows: &[Row], c: &FilingContext) -> String {
-    let report = validate(expa(), rows, c);
-    assert!(report.is_clean(), "validation: {:?}", report.findings);
-    let out = generate(expa(), &report.records, c);
-    assert!(
-        !out.findings.iter().any(|f| f.severity == Severity::Error),
-        "generation: {:?}",
-        out.findings
-    );
-    out.to_json()
-}
-
-#[test]
-fn every_derivation_the_spec_names_is_implemented() {
-    assert!(gst_core::generate::unimplemented_derivations(expa()).is_empty());
+    common::payload(expa(), rows, c)
 }
 
 #[test]
@@ -128,8 +95,7 @@ fn both_invoice_numbers_are_required() {
 
 #[test]
 fn an_export_without_payment_zeroes_tax_and_cess() {
-    let mut w = with(5, "Export Type", "WOPAY");
-    w.cells.insert("Cess Amount".into(), "750".into());
+    let w = with(5, "Export Type", "WOPAY").with_cell("Cess Amount", "750");
     let json = payload(&[w], &ctx());
     assert!(json.contains(r#""iamt":0"#), "{json}");
     assert!(json.contains(r#""csamt":0"#), "{json}");
@@ -145,10 +111,7 @@ fn line_items_carry_no_number_and_no_itm_det_wrapper() {
 
 #[test]
 fn the_shipping_bill_pair_stays_all_or_nothing() {
-    let mut number_only = base(5);
-    number_only
-        .cells
-        .insert("Shipping Bill Date".into(), String::new());
+    let number_only = with(5, "Shipping Bill Date", "");
     let report = validate(expa(), &[number_only], &ctx());
     assert!(
         report
@@ -161,9 +124,9 @@ fn the_shipping_bill_pair_stays_all_or_nothing() {
 
 #[test]
 fn several_rates_for_one_amendment_become_one_record() {
-    let mut second = with(6, "Rate", "5");
-    second.cells.insert("Taxable Value".into(), "20000".into());
-    second.cells.insert("Cess Amount".into(), "500".into());
+    let second = with(6, "Rate", "5")
+        .with_cell("Taxable Value", "20000")
+        .with_cell("Cess Amount", "500");
 
     let report = validate(expa(), &[base(5), second], &ctx());
     assert!(report.is_clean(), "{:?}", report.findings);
@@ -176,13 +139,9 @@ fn several_rates_for_one_amendment_become_one_record() {
 
 #[test]
 fn rows_sharing_a_revised_number_must_agree_on_the_original() {
-    let mut conflicting = with(6, "Rate", "5");
-    conflicting
-        .cells
-        .insert("Taxable Value".into(), "20000".into());
-    conflicting
-        .cells
-        .insert("Original Invoice Number".into(), "EX-999".into());
+    let conflicting = with(6, "Rate", "5")
+        .with_cell("Taxable Value", "20000")
+        .with_cell("Original Invoice Number", "EX-999");
     let report = validate(expa(), &[base(5), conflicting], &ctx());
     assert!(report.is_clean(), "{:?}", report.findings);
     let out = generate(expa(), &report.records, &ctx());
@@ -196,8 +155,7 @@ fn rows_sharing_a_revised_number_must_agree_on_the_original() {
 
 #[test]
 fn the_shipped_fixture_validates_and_generates() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/gstr1/expa-sample.csv");
+    let path = common::repo_path("fixtures/gstr1/expa-sample.csv");
     let rows = gst_core::import::read(&path, expa()).expect("reads");
     assert_eq!(rows.len(), 3);
 

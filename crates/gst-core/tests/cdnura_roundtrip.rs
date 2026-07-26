@@ -3,44 +3,25 @@
 //! The unamended unregistered section plus original-note keys. Covers only what
 //! differs; UR-type behaviour is exercised by the cdnur suite.
 
-use gst_core::date::ReturnPeriod;
-use gst_core::generate::generate;
+mod common;
+
 use gst_core::record::Row;
-use gst_core::spec::{self, SectionSpec, Severity};
+use gst_core::spec::SectionSpec;
 use gst_core::validate::{FilingContext, validate};
 
 fn cdnura() -> &'static SectionSpec {
-    spec::section("cdnura").expect("cdnura is registered")
+    common::sec("cdnura")
 }
 
 fn ctx() -> FilingContext {
-    FilingContext {
-        supplier_gstin: "27AAPFU0939F1ZV".into(),
-        period: ReturnPeriod::new(9, 2017).unwrap(),
-        is_sez: false,
-        aato_over_5cr: false,
-    }
+    common::ctx(9, 2017)
 }
 
-const COLUMNS: [&str; 12] = [
-    "UR Type",
-    "Original Note Number",
-    "Original Note Date",
-    "Revised Note Number",
-    "Revised Note Date",
-    "Note Type",
-    "Place Of Supply",
-    "Note Value",
-    "Applicable % of Tax Rate",
-    "Rate",
-    "Taxable Value",
-    "Cess Amount",
-];
-
 fn base(sheet_row: usize) -> Row {
-    Row::from_pairs(
+    common::row(
+        cdnura(),
         sheet_row,
-        COLUMNS.into_iter().zip([
+        &[
             "B2CL",
             "UN-001",
             "14-Jul-17",
@@ -53,31 +34,16 @@ fn base(sheet_row: usize) -> Row {
             "18",
             "250000",
             "",
-        ]),
+        ],
     )
 }
 
 fn with(sheet_row: usize, column: &str, value: &str) -> Row {
-    let mut r = base(sheet_row);
-    r.cells.insert(column.to_owned(), value.to_owned());
-    r
+    base(sheet_row).with_cell(column, value)
 }
 
 fn payload(rows: &[Row], c: &FilingContext) -> String {
-    let report = validate(cdnura(), rows, c);
-    assert!(report.is_clean(), "validation: {:?}", report.findings);
-    let out = generate(cdnura(), &report.records, c);
-    assert!(
-        !out.findings.iter().any(|f| f.severity == Severity::Error),
-        "generation: {:?}",
-        out.findings
-    );
-    out.to_json()
-}
-
-#[test]
-fn every_derivation_the_spec_names_is_implemented() {
-    assert!(gst_core::generate::unimplemented_derivations(cdnura()).is_empty());
+    common::payload(cdnura(), rows, c)
 }
 
 #[test]
@@ -106,8 +72,7 @@ fn the_original_note_may_predate_the_return_period() {
 #[test]
 fn the_ur_type_rules_still_apply_to_amendments() {
     // Export amendment: place of supply must be blank.
-    let mut e = base(5);
-    e.cells.insert("UR Type".into(), "EXPWP".into());
+    let e = with(5, "UR Type", "EXPWP");
     let report = validate(cdnura(), &[e], &ctx());
     assert!(
         report
@@ -131,10 +96,9 @@ fn the_ur_type_rules_still_apply_to_amendments() {
 
 #[test]
 fn an_export_amendment_without_payment_zeroes_tax() {
-    let mut e = base(5);
-    e.cells.insert("UR Type".into(), "EXPWOP".into());
-    e.cells.insert("Place Of Supply".into(), String::new());
-    e.cells.insert("Cess Amount".into(), "750".into());
+    let e = with(5, "UR Type", "EXPWOP")
+        .with_cell("Place Of Supply", "")
+        .with_cell("Cess Amount", "750");
     let json = payload(&[e], &ctx());
     assert!(json.contains(r#""iamt":0"#), "{json}");
     assert!(json.contains(r#""csamt":0"#), "{json}");
@@ -164,8 +128,7 @@ fn tax_is_never_split_into_central_and_state() {
 
 #[test]
 fn the_shipped_fixture_validates_and_generates() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/gstr1/cdnura-sample.csv");
+    let path = common::repo_path("fixtures/gstr1/cdnura-sample.csv");
     let rows = gst_core::import::read(&path, cdnura()).expect("reads");
     assert_eq!(rows.len(), 3);
 

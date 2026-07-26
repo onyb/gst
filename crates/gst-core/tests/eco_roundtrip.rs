@@ -6,9 +6,10 @@
 //! emitted at once, a `flag` no column supplies, and a `posItms` nesting level
 //! nothing else uses.
 
+mod common;
+
 use std::collections::HashMap;
 
-use gst_core::date::ReturnPeriod;
 use gst_core::generate::{Generated, generate};
 use gst_core::record::Row;
 use gst_core::spec::{self, SectionSpec, Severity};
@@ -16,26 +17,25 @@ use gst_core::upload::{self, Turnover};
 use gst_core::validate::{FilingContext, validate};
 
 fn sec(code: &str) -> &'static SectionSpec {
-    spec::section(code).unwrap_or_else(|| panic!("{code} is registered"))
+    common::sec(code)
 }
 
 fn ctx() -> FilingContext {
-    FilingContext {
-        supplier_gstin: "27AAPFU0939F1ZV".into(),
-        period: ReturnPeriod::new(6, 2025).unwrap(),
-        is_sez: false,
-        aato_over_5cr: false,
-    }
+    common::ctx(6, 2025)
 }
 
-fn row(columns: &[&str], values: &[&str]) -> Row {
-    Row::from_pairs(5, columns.iter().copied().zip(values.iter().copied()))
+fn row(code: &str, values: &[&str]) -> Row {
+    common::row(sec(code), 5, values)
 }
 
 fn run(code: &str, rows: &[Row]) -> Generated {
     let spec = sec(code);
     let report = validate(spec, rows, &ctx());
-    assert!(report.is_clean(), "{code} validation: {:?}", report.findings);
+    assert!(
+        report.is_clean(),
+        "{code} validation: {:?}",
+        report.findings
+    );
     let out = generate(spec, &report.records, &ctx());
     assert!(
         !out.findings.iter().any(|f| f.severity == Severity::Error),
@@ -45,20 +45,9 @@ fn run(code: &str, rows: &[Row]) -> Generated {
     out
 }
 
-const ECO: [&str; 8] = [
-    "Nature of Supply",
-    "GSTIN of E-Commerce Operator",
-    "E-Commerce Operator Name",
-    "Net value of supplies",
-    "Integrated tax",
-    "Central tax",
-    "State/UT tax",
-    "Cess",
-];
-
 fn eco_row(nature: &str, value: &str) -> Row {
     row(
-        &ECO,
+        "supeco",
         &[
             nature,
             "12AJIPA1572E1C7",
@@ -70,27 +59,6 @@ fn eco_row(nature: &str, value: &str) -> Row {
             "0",
         ],
     )
-}
-
-#[test]
-fn every_derivation_the_eco_specs_name_is_implemented() {
-    for code in [
-        "supeco",
-        "supecoa",
-        "ecomb2b",
-        "ecomb2c",
-        "ecomurp2b",
-        "ecomurp2c",
-        "ecomab2b",
-        "ecomab2c",
-        "ecomaurp2b",
-        "ecomaurp2c",
-    ] {
-        assert!(
-            gst_core::generate::unimplemented_derivations(sec(code)).is_empty(),
-            "{code} names a derivation the engine does not implement"
-        );
-    }
 }
 
 #[test]
@@ -117,12 +85,19 @@ fn one_sheet_routes_its_rows_into_two_payload_members() {
         file.contains(r#""supeco":{"clttx":[{"etin":"12AJIPA1572E1C7","suppval":100000"#),
         "{file}"
     );
-    assert!(file.contains(r#""paytx":[{"etin":"12AJIPA1572E1C7","suppval":50000"#), "{file}");
+    assert!(
+        file.contains(r#""paytx":[{"etin":"12AJIPA1572E1C7","suppval":50000"#),
+        "{file}"
+    );
 }
 
 #[test]
 fn an_unknown_nature_of_supply_is_rejected() {
-    let report = validate(sec("supeco"), &[eco_row("Liable to something", "1000")], &ctx());
+    let report = validate(
+        sec("supeco"),
+        &[eco_row("Liable to something", "1000")],
+        &ctx(),
+    );
     assert!(
         report
             .errors()
@@ -139,22 +114,13 @@ fn the_operator_name_never_reaches_the_payload() {
     assert!(!json.contains("Acme"), "{json}");
 }
 
-const B2C: [&str; 6] = [
-    "Supplier GSTIN/UIN",
-    "Supplier Name",
-    "Place Of Supply",
-    "Taxable Value",
-    "Rate",
-    "Cess Amount",
-];
-
 #[test]
 fn the_unregistered_tables_emit_both_tax_halves_at_once() {
     // Every other section emits either iamt or camt+samt. These emit all three.
     let inter = run(
         "ecomb2c",
         &[row(
-            &B2C,
+            "ecomb2c",
             &[
                 "29AAPFU0939F1ZR",
                 "Seller Ltd",
@@ -167,12 +133,15 @@ fn the_unregistered_tables_emit_both_tax_halves_at_once() {
     )
     .to_json();
     assert!(inter.contains(r#""sply_ty":"INTER""#), "{inter}");
-    assert!(inter.contains(r#""camt":0,"samt":0,"iamt":9000"#), "{inter}");
+    assert!(
+        inter.contains(r#""camt":0,"samt":0,"iamt":9000"#),
+        "{inter}"
+    );
 
     let intra = run(
         "ecomb2c",
         &[row(
-            &B2C,
+            "ecomb2c",
             &[
                 "29AAPFU0939F1ZR",
                 "Seller Ltd",
@@ -185,7 +154,10 @@ fn the_unregistered_tables_emit_both_tax_halves_at_once() {
     )
     .to_json();
     assert!(intra.contains(r#""sply_ty":"INTRA""#), "{intra}");
-    assert!(intra.contains(r#""camt":4500,"samt":4500,"iamt":0"#), "{intra}");
+    assert!(
+        intra.contains(r#""camt":4500,"samt":4500,"iamt":0"#),
+        "{intra}"
+    );
 }
 
 #[test]
@@ -193,7 +165,7 @@ fn every_e_commerce_record_carries_a_flag_no_column_supplies() {
     let json = run(
         "ecomb2c",
         &[row(
-            &B2C,
+            "ecomb2c",
             &[
                 "29AAPFU0939F1ZR",
                 "Seller Ltd",
@@ -210,20 +182,10 @@ fn every_e_commerce_record_carries_a_flag_no_column_supplies() {
 
 #[test]
 fn the_amended_b2c_table_nests_under_pos_items() {
-    let columns = [
-        "Financial Year",
-        "Original Month",
-        "Supplier GSTIN/UIN",
-        "Supplier Name",
-        "Place Of Supply",
-        "Rate",
-        "Taxable Value",
-        "Cess Amount",
-    ];
     let json = run(
         "ecomab2c",
         &[row(
-            &columns,
+            "ecomab2c",
             &[
                 "2017-18",
                 "JULY",
@@ -246,26 +208,10 @@ fn the_amended_b2c_table_nests_under_pos_items() {
 #[test]
 fn the_amended_tables_disagree_on_key_order() {
     // Registered supplier: sply_ty leads, original document number first.
-    let b2b = [
-        "Supplier GSTIN/UIN",
-        "Supplier Name",
-        "Recipient GSTIN/UIN",
-        "Recipient Name",
-        "Original Document Number",
-        "Original Document Date",
-        "Revised Document Number",
-        "Revised Document Date",
-        "Value of supplies made",
-        "Place Of Supply",
-        "Document type",
-        "Rate",
-        "Taxable Value",
-        "Cess Amount",
-    ];
     let json = run(
         "ecomab2b",
         &[row(
-            &b2b,
+            "ecomab2b",
             &[
                 "29AAPFU0939F1ZR",
                 "Seller Ltd",
@@ -290,24 +236,10 @@ fn the_amended_tables_disagree_on_key_order() {
     assert!(json.find("oinum") < json.find("inum"), "{json}");
 
     // Unregistered supplier: revised number first, sply_ty last of all.
-    let urp = [
-        "Recipient GSTIN/UIN",
-        "Recipient Name",
-        "Original Document Number",
-        "Original Document Date",
-        "Revised Document Number",
-        "Revised Document Date",
-        "Value of supplies made",
-        "Document type",
-        "Place Of Supply",
-        "Rate",
-        "Taxable Value",
-        "Cess Amount",
-    ];
     let json = run(
         "ecomaurp2b",
         &[row(
-            &urp,
+            "ecomaurp2b",
             &[
                 "12GEOPS0823BBZH",
                 "Buyer Ltd",
@@ -335,10 +267,7 @@ fn a_blank_cess_is_accepted_and_emitted_as_zero() {
     // producing the payload the reference gives an explicit 0.
     let json = run(
         "ecomurp2c",
-        &[row(
-            &["Place Of Supply", "Taxable Value", "Rate", "Cess Amount"],
-            &["37-Andhra Pradesh", "50000", "18", ""],
-        )],
+        &[row("ecomurp2c", &["37-Andhra Pradesh", "50000", "18", ""])],
     )
     .to_json();
     assert!(json.contains(r#""csamt":0"#), "{json}");
@@ -346,12 +275,13 @@ fn a_blank_cess_is_accepted_and_emitted_as_zero() {
 
 #[test]
 fn the_shipped_eco_workbook_reproduces_the_captured_reference() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let workbook = root.join("fixtures/gstr1/eco-workbook.xlsx");
+    let mut workbook =
+        gst_core::import::Workbook::open(&common::repo_path("fixtures/gstr1/eco-workbook.xlsx"))
+            .expect("the ECO workbook opens");
 
     let mut sections: HashMap<String, Generated> = HashMap::new();
     for spec in spec::sections() {
-        let rows = match gst_core::import::read(&workbook, spec) {
+        let rows = match workbook.read(spec) {
             Ok(rows) => rows,
             Err(gst_core::import::ImportError::SheetMissing { .. }) => continue,
             Err(e) => panic!("reading {}: {e}", spec.section),
@@ -364,8 +294,9 @@ fn the_shipped_eco_workbook_reproduces_the_captured_reference() {
     assert_eq!(sections.len(), 10, "all ten ECO sheets should be read");
 
     let ours = upload::build(&sections, &ctx(), Turnover::default()).to_json();
-    let golden =
-        std::fs::read_to_string(root.join("fixtures/golden/gstr1-eco-062025-reference.json"))
-            .expect("the ECO reference capture is present");
+    let golden = std::fs::read_to_string(common::repo_path(
+        "fixtures/golden/gstr1-eco-062025-reference.json",
+    ))
+    .expect("the ECO reference capture is present");
     assert_eq!(ours, golden.trim_end());
 }

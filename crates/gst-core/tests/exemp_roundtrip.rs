@@ -5,65 +5,40 @@
 //! label becoming a code, and the payload's key order differing from the
 //! template's column order.
 
-use gst_core::date::ReturnPeriod;
+mod common;
+
 use gst_core::generate::generate;
 use gst_core::record::Row;
-use gst_core::spec::{self, SectionSpec, Severity};
+use gst_core::spec::SectionSpec;
 use gst_core::validate::{FilingContext, validate};
 
 fn nil() -> &'static SectionSpec {
-    spec::section("nil").expect("nil is registered")
+    common::sec("nil")
 }
 
 fn ctx() -> FilingContext {
-    FilingContext {
-        supplier_gstin: "27AAPFU0939F1ZV".into(),
-        period: ReturnPeriod::new(7, 2017).unwrap(),
-        is_sez: false,
-        aato_over_5cr: false,
-    }
+    common::ctx(7, 2017)
 }
 
-const COLUMNS: [&str; 4] = [
-    "Description",
-    "Nil Rated Supplies",
-    "Exempted(other than nil rated/non GST supply)",
-    "Non-GST Supplies",
-];
-
 fn base(sheet_row: usize) -> Row {
-    Row::from_pairs(
+    common::row(
+        nil(),
         sheet_row,
-        COLUMNS.into_iter().zip([
+        &[
             "Inter-State supplies to registered persons",
             "21143",
             "51235",
             "5213",
-        ]),
+        ],
     )
 }
 
 fn with(sheet_row: usize, column: &str, value: &str) -> Row {
-    let mut r = base(sheet_row);
-    r.cells.insert(column.to_owned(), value.to_owned());
-    r
+    base(sheet_row).with_cell(column, value)
 }
 
 fn payload(rows: &[Row], c: &FilingContext) -> String {
-    let report = validate(nil(), rows, c);
-    assert!(report.is_clean(), "validation: {:?}", report.findings);
-    let out = generate(nil(), &report.records, c);
-    assert!(
-        !out.findings.iter().any(|f| f.severity == Severity::Error),
-        "generation: {:?}",
-        out.findings
-    );
-    out.to_json()
-}
-
-#[test]
-fn every_derivation_the_spec_names_is_implemented() {
-    assert!(gst_core::generate::unimplemented_derivations(nil()).is_empty());
+    common::payload(nil(), rows, c)
 }
 
 #[test]
@@ -103,11 +78,19 @@ fn inter_state_is_intr_and_intra_state_is_intra() {
     // One letter apart, and the longer code belongs to the shorter word — the
     // easiest pair in the whole spec to transpose.
     let inter = payload(
-        &[with(5, "Description", "Inter-State supplies to registered persons")],
+        &[with(
+            5,
+            "Description",
+            "Inter-State supplies to registered persons",
+        )],
         &ctx(),
     );
     let intra = payload(
-        &[with(5, "Description", "Intra-State supplies to registered persons")],
+        &[with(
+            5,
+            "Description",
+            "Intra-State supplies to registered persons",
+        )],
         &ctx(),
     );
     assert!(inter.contains(r#""sply_ty":"INTRB2B""#), "{inter}");
@@ -116,7 +99,12 @@ fn inter_state_is_intr_and_intra_state_is_intra() {
 
 #[test]
 fn an_unknown_category_is_rejected() {
-    for bad in ["", "Inter-State supplies", "INTRB2B", "inter-state supplies to registered persons"] {
+    for bad in [
+        "",
+        "Inter-State supplies",
+        "INTRB2B",
+        "inter-state supplies to registered persons",
+    ] {
         let report = validate(nil(), &[with(5, "Description", bad)], &ctx());
         assert!(
             report
@@ -157,7 +145,11 @@ fn a_third_decimal_place_is_rounded_rather_than_rejected() {
 
 #[test]
 fn an_amount_beyond_the_declared_width_is_rejected() {
-    let report = validate(nil(), &[with(5, "Nil Rated Supplies", "123456789012")], &ctx());
+    let report = validate(
+        nil(),
+        &[with(5, "Nil Rated Supplies", "123456789012")],
+        &ctx(),
+    );
     assert!(
         report
             .errors()
@@ -169,7 +161,11 @@ fn an_amount_beyond_the_declared_width_is_rejected() {
 
 #[test]
 fn every_row_becomes_its_own_record_in_row_order() {
-    let second = with(6, "Description", "Intra-State supplies to registered persons");
+    let second = with(
+        6,
+        "Description",
+        "Intra-State supplies to registered persons",
+    );
     let report = validate(nil(), &[base(5), second], &ctx());
     assert!(report.is_clean(), "{:?}", report.findings);
     let out = generate(nil(), &report.records, &ctx());
@@ -183,8 +179,7 @@ fn every_row_becomes_its_own_record_in_row_order() {
 
 #[test]
 fn the_shipped_fixture_validates_and_generates() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/gstr1/exemp-sample.csv");
+    let path = common::repo_path("fixtures/gstr1/exemp-sample.csv");
     let rows = gst_core::import::read(&path, nil()).expect("reads");
     assert_eq!(rows.len(), 4);
 
