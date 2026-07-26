@@ -23,7 +23,7 @@ enum Command {
     Validate {
         workbook: PathBuf,
         #[command(flatten)]
-        filing: Filing,
+        filing: SectionFiling,
         /// Output format for the report
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
@@ -32,23 +32,13 @@ enum Command {
     Summary {
         workbook: PathBuf,
         #[command(flatten)]
-        filing: Filing,
+        filing: SectionFiling,
     },
     /// Generate the complete portal upload file from a whole workbook
     Upload {
         workbook: PathBuf,
-        /// Your own GSTIN, as the filer
-        #[arg(long)]
-        gstin: String,
-        /// Return period as MMYYYY, e.g. 072017
-        #[arg(long)]
-        period: String,
-        /// Treat the filer as an SEZ unit
-        #[arg(long)]
-        sez: bool,
-        /// Aggregate annual turnover exceeds 5 crore (6-digit HSN required)
-        #[arg(long = "aato-over-5cr")]
-        aato_over_5cr: bool,
+        #[command(flatten)]
+        filing: Filing,
         /// Aggregate turnover, if the period requires it
         #[arg(long)]
         gt: Option<String>,
@@ -63,7 +53,7 @@ enum Command {
     Generate {
         workbook: PathBuf,
         #[command(flatten)]
-        filing: Filing,
+        filing: SectionFiling,
         /// Directory for the generated JSON file(s)
         #[arg(short, long, default_value = "out")]
         output: PathBuf,
@@ -93,6 +83,13 @@ struct Filing {
     /// Aggregate annual turnover exceeds 5 crore, which requires 6-digit HSN
     #[arg(long = "aato-over-5cr")]
     aato_over_5cr: bool,
+}
+
+/// Filing details plus the section, for the single-section commands.
+#[derive(Args)]
+struct SectionFiling {
+    #[command(flatten)]
+    filing: Filing,
     /// Section to read. Auto-detection from workbook shape is not built yet.
     #[arg(long, default_value = "b2b")]
     section: String,
@@ -123,23 +120,11 @@ fn main() -> ExitCode {
         } => run_generate(&workbook, &filing, &output),
         Command::Upload {
             workbook,
-            gstin,
-            period,
-            sez,
-            aato_over_5cr,
+            filing,
             gt,
             cur_gt,
             output,
-        } => run_upload(
-            &workbook,
-            &gstin,
-            &period,
-            sez,
-            aato_over_5cr,
-            gt,
-            cur_gt,
-            &output,
-        ),
+        } => run_upload(&workbook, &filing, gt, cur_gt, &output),
         Command::Summary { .. } => {
             unimplemented("summary", "the section total calculator is not built yet")
         }
@@ -156,18 +141,10 @@ fn unimplemented(command: &str, why: &str) -> ExitCode {
     ExitCode::from(EXIT_UNUSABLE)
 }
 
-/// Resolve the filing details and section spec, or explain what is wrong.
-fn prepare(filing: &Filing) -> Result<(FilingContext, &'static SectionSpec), String> {
+/// Resolve the filing details, or explain what is wrong.
+fn context(filing: &Filing) -> Result<FilingContext, String> {
     let period = ReturnPeriod::parse(&filing.period)
         .ok_or_else(|| format!("--period '{}' is not MMYYYY, e.g. 072017", filing.period))?;
-
-    let spec = spec::section(&filing.section).ok_or_else(|| {
-        format!(
-            "--section '{}' is not available yet; specified so far: {}",
-            filing.section,
-            spec::section_codes().join(", ")
-        )
-    })?;
 
     if !gst_core::gstin::checksum_valid(&filing.gstin) {
         return Err(format!(
@@ -176,32 +153,58 @@ fn prepare(filing: &Filing) -> Result<(FilingContext, &'static SectionSpec), Str
         ));
     }
 
-    Ok((
-        FilingContext {
-            supplier_gstin: filing.gstin.clone(),
-            period,
-            is_sez: filing.sez,
-            aato_over_5cr: filing.aato_over_5cr,
-        },
-        spec,
-    ))
+    Ok(FilingContext {
+        supplier_gstin: filing.gstin.clone(),
+        period,
+        is_sez: filing.sez,
+        aato_over_5cr: filing.aato_over_5cr,
+    })
 }
 
-fn run_validate(workbook: &Path, filing: &Filing, format: Format) -> ExitCode {
-    let (ctx, spec) = match prepare(filing) {
+/// Prologue the single-section commands share: resolve the filing details and
+/// section spec, then read that section's rows.
+fn load(
+    workbook: &Path,
+    filing: &SectionFiling,
+) -> Result<
+    (
+        FilingContext,
+        &'static SectionSpec,
+        Vec<gst_core::record::Row>,
+    ),
+    ExitCode,
+> {
+    let prepared = context(&filing.filing).and_then(|ctx| {
+        let spec = spec::section(&filing.section).ok_or_else(|| {
+            format!(
+                "--section '{}' is not available yet; specified so far: {}",
+                filing.section,
+                spec::section_codes().join(", ")
+            )
+        })?;
+        Ok((ctx, spec))
+    });
+    let (ctx, spec) = match prepared {
         Ok(v) => v,
         Err(e) => {
             eprintln!("{e}");
-            return ExitCode::from(EXIT_UNUSABLE);
+            return Err(ExitCode::from(EXIT_UNUSABLE));
         }
     };
 
-    let rows = match import::read(workbook, spec) {
-        Ok(rows) => rows,
+    match import::read(workbook, spec) {
+        Ok(rows) => Ok((ctx, spec, rows)),
         Err(e) => {
             eprintln!("cannot read {}: {e}", workbook.display());
-            return ExitCode::from(EXIT_UNUSABLE);
+            Err(ExitCode::from(EXIT_UNUSABLE))
         }
+    }
+}
+
+fn run_validate(workbook: &Path, filing: &SectionFiling, format: Format) -> ExitCode {
+    let (ctx, spec, rows) = match load(workbook, filing) {
+        Ok(v) => v,
+        Err(code) => return code,
     };
 
     let report = validate(spec, &rows, &ctx);
@@ -280,62 +283,39 @@ fn report_text(
 }
 
 fn report_json(findings: &[&Finding]) {
-    // Hand-built so the shape stays stable regardless of the internal types.
-    let items: Vec<String> = findings
+    use gst_core::payload::Json;
+    // Built as a payload::Json object so the escaping rules live in one place;
+    // insertion order keeps the shape stable regardless of the internal types.
+    let items: Vec<Json> = findings
         .iter()
         .map(|f| {
-            let mut parts = vec![format!("\"row\":{}", f.sheet_row)];
+            let mut obj = Json::obj();
+            obj.insert_path("row", Json::Num(f.sheet_row.into()));
             if let Some(c) = &f.column {
-                parts.push(format!("\"column\":{}", quote(c)));
+                obj.insert_path("column", Json::Str(c.clone()));
             }
             if let Some(field) = &f.field {
-                parts.push(format!("\"field\":{}", quote(field)));
+                obj.insert_path("field", Json::Str(field.clone()));
             }
             if let Some(r) = &f.rule {
-                parts.push(format!("\"rule\":{}", quote(r)));
+                obj.insert_path("rule", Json::Str(r.clone()));
             }
-            parts.push(format!(
-                "\"severity\":{}",
-                quote(match f.severity {
-                    Severity::Error => "error",
-                    Severity::Warning => "warning",
-                })
-            ));
-            parts.push(format!("\"message\":{}", quote(&f.message)));
-            format!("{{{}}}", parts.join(","))
+            let severity = match f.severity {
+                Severity::Error => "error",
+                Severity::Warning => "warning",
+            };
+            obj.insert_path("severity", Json::Str(severity.to_owned()));
+            obj.insert_path("message", Json::Str(f.message.clone()));
+            obj
         })
         .collect();
-    println!("[{}]", items.join(","));
+    println!("{}", Json::Arr(items).to_json());
 }
 
-fn quote(s: &str) -> String {
-    let escaped: String = s
-        .chars()
-        .flat_map(|c| match c {
-            '"' => vec!['\\', '"'],
-            '\\' => vec!['\\', '\\'],
-            '\n' => vec!['\\', 'n'],
-            c => vec![c],
-        })
-        .collect();
-    format!("\"{escaped}\"")
-}
-
-fn run_generate(workbook: &Path, filing: &Filing, output: &Path) -> ExitCode {
-    let (ctx, spec) = match prepare(filing) {
+fn run_generate(workbook: &Path, filing: &SectionFiling, output: &Path) -> ExitCode {
+    let (ctx, spec, rows) = match load(workbook, filing) {
         Ok(v) => v,
-        Err(e) => {
-            eprintln!("{e}");
-            return ExitCode::from(EXIT_UNUSABLE);
-        }
-    };
-
-    let rows = match import::read(workbook, spec) {
-        Ok(rows) => rows,
-        Err(e) => {
-            eprintln!("cannot read {}: {e}", workbook.display());
-            return ExitCode::from(EXIT_UNUSABLE);
-        }
+        Err(code) => return code,
     };
 
     let report = validate(spec, &rows, &ctx);
@@ -363,9 +343,8 @@ fn run_generate(workbook: &Path, filing: &Filing, output: &Path) -> ExitCode {
     // Being explicit rather than letting anyone assume this file is uploadable.
     let unverified = spec.unverified_keys();
     println!(
-        "\nnot yet a complete upload file: this is the '{}' section payload only. \
-         The outer envelope the portal expects (gstin, return period, version) \
-         is not specified yet.",
+        "\nnot a complete upload file: this is the '{}' section payload only — \
+         run `gst upload` for the full portal envelope.",
         spec.section
     );
     if !unverified.is_empty() {
@@ -387,39 +366,26 @@ fn run_generate(workbook: &Path, filing: &Filing, output: &Path) -> ExitCode {
 ///
 /// A section whose sheet is absent, or which has no rows, contributes nothing —
 /// the envelope still carries its key, empty, as the reference does.
-#[allow(clippy::too_many_arguments)]
 fn run_upload(
     workbook: &Path,
-    gstin: &str,
-    period: &str,
-    sez: bool,
-    aato_over_5cr: bool,
+    filing: &Filing,
     gt: Option<String>,
     cur_gt: Option<String>,
     output: &Path,
 ) -> ExitCode {
-    let Some(parsed_period) = ReturnPeriod::parse(period) else {
-        eprintln!("--period '{period}' is not MMYYYY, e.g. 072017");
-        return ExitCode::from(EXIT_UNUSABLE);
-    };
-    if !gst_core::gstin::checksum_valid(gstin) {
-        eprintln!("--gstin '{gstin}' is not a valid registration number (check digit failed)");
-        return ExitCode::from(EXIT_UNUSABLE);
-    }
-    let ctx = FilingContext {
-        supplier_gstin: gstin.to_owned(),
-        period: parsed_period,
-        is_sez: sez,
-        aato_over_5cr,
+    let ctx = match context(filing) {
+        Ok(ctx) => ctx,
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::from(EXIT_UNUSABLE);
+        }
     };
 
     let parse_turnover = |flag: &str, raw: Option<String>| match raw {
         None => Ok(None),
-        Some(text) => text
-            .replace(',', "")
-            .parse::<rust_decimal::Decimal>()
+        Some(text) => gst_core::validate::parse_amount(&text)
             .map(Some)
-            .map_err(|_| format!("--{flag} '{text}' is not a number")),
+            .ok_or_else(|| format!("--{flag} '{text}' is not a number")),
     };
     let turnover = match (parse_turnover("gt", gt), parse_turnover("cur-gt", cur_gt)) {
         (Ok(gross), Ok(current)) => gst_core::upload::Turnover { gross, current },
@@ -429,45 +395,15 @@ fn run_upload(
         }
     };
 
-    let mut sections: std::collections::HashMap<String, gst_core::generate::Generated> =
-        std::collections::HashMap::new();
-    let mut findings: Vec<Finding> = Vec::new();
-    let mut read = 0usize;
-    let mut accepted = 0usize;
-    let mut per_section: Vec<(String, usize, usize, usize)> = Vec::new();
-
-    for spec in spec::sections() {
-        let rows = match import::read(workbook, spec) {
-            Ok(rows) => rows,
-            // A workbook legitimately lacks sheets for sections the filer does
-            // not use, so a missing sheet is not an error here.
-            Err(import::ImportError::SheetMissing { .. }) => continue,
-            Err(e) => {
-                eprintln!("cannot read section '{}': {e}", spec.section);
-                return ExitCode::from(EXIT_UNUSABLE);
-            }
-        };
-        if rows.is_empty() {
-            continue;
+    let run = match gst_core::upload::read_workbook(workbook, &ctx) {
+        Ok(run) => run,
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::from(EXIT_UNUSABLE);
         }
-        let report = validate(spec, &rows, &ctx);
-        let out = generate(spec, &report.records, &ctx);
-        read += rows.len();
-        accepted += report.records.len();
-        per_section.push((
-            spec.section.clone(),
-            rows.len(),
-            report.records.len(),
-            out.envelopes.len(),
-        ));
-        findings.extend(report.findings);
-        findings.extend(out.findings.clone());
-        if !out.envelopes.is_empty() {
-            sections.insert(spec.section.clone(), out);
-        }
-    }
+    };
 
-    if per_section.is_empty() {
+    if run.stats.is_empty() {
         eprintln!(
             "no section sheets with data found in {}",
             workbook.display()
@@ -475,8 +411,7 @@ fn run_upload(
         return ExitCode::from(EXIT_UNUSABLE);
     }
 
-    let file = gst_core::upload::build(&sections, &ctx, turnover);
-    let body = file.to_json();
+    let body = run.build(&ctx, turnover).to_json();
 
     if let Err(e) = std::fs::create_dir_all(output) {
         eprintln!("cannot create {}: {e}", output.display());
@@ -497,11 +432,17 @@ fn run_upload(
         "{:<8} {:>6} {:>9} {:>10}",
         "section", "rows", "accepted", "records"
     );
-    for (section, rows, ok, records) in &per_section {
-        println!("{section:<8} {rows:>6} {ok:>9} {records:>10}");
+    for stat in &run.stats {
+        println!(
+            "{:<8} {:>6} {:>9} {:>10}",
+            stat.section, stat.rows, stat.accepted, stat.envelopes
+        );
     }
 
-    let errors = findings
+    let read: usize = run.stats.iter().map(|s| s.rows).sum();
+    let accepted: usize = run.stats.iter().map(|s| s.accepted).sum();
+    let errors = run
+        .findings
         .iter()
         .filter(|f| f.severity == Severity::Error)
         .count();
