@@ -1,0 +1,216 @@
+{
+  "$schema": "../section.schema.json",
+  "section": "b2cl",
+  "return": "gstr1",
+  "title": "B2C(Large) Invoices - 5A, 5B",
+
+  "provenance": {
+    "offline_tool": "V3.2.4",
+    "excel_template": "GSTR1_Excel_Workbook_Template_V2.2.xlsx",
+    "csv_template": "Section_wise_CSV_files/GSTR1/b2cl.csv",
+    "verified_on": "2026-07-26"
+  },
+
+  "source": {
+    "excel": {
+      "sheet": "b2cl",
+      "header_row": 4,
+      "first_data_row": 5
+    },
+    "csv": {
+      "file": "b2cl.csv",
+      "header_row": 1
+    }
+  },
+
+  "fields": [
+    {
+      "id": "inum",
+      "column": "Invoice Number",
+      "order": 0,
+      "type": "text",
+      "required": true,
+      "pattern": "^[a-zA-Z0-9\\-/]{1,16}$",
+      "max_length": 16,
+      "constraints": ["numeric_value_not_zero"],
+      "description": "Supplier's invoice number. Letters, digits, hyphen and slash only."
+    },
+    {
+      "id": "idt",
+      "column": "Invoice date",
+      "order": 1,
+      "type": "date",
+      "required": true,
+      "constraints": ["date_within_return_window"],
+      "transform": "date_normalize",
+      "description": "Invoice date."
+    },
+    {
+      "id": "val",
+      "column": "Invoice Value",
+      "order": 2,
+      "type": "decimal",
+      "required": true,
+      "pattern": "^(\\d{0,13})(\\.\\d{0,2})?$",
+      "constraints": [
+        {
+          "name": "min_exclusive",
+          "value": 250000,
+          "until_period": "082024",
+          "description": "Before August 2024 an invoice belonged in this table only above 2,50,000."
+        },
+        {
+          "name": "min_exclusive",
+          "value": 100000,
+          "from_period": "082024",
+          "description": "From August 2024 the threshold dropped to 1,00,000."
+        }
+      ],
+      "description": "Total invoice value including tax. This table carries only high-value supplies to unregistered persons, and the threshold changed with the August 2024 period. The comparison is strictly greater than: an invoice exactly at the threshold does not belong here."
+    },
+    {
+      "id": "pos",
+      "column": "Place Of Supply",
+      "order": 3,
+      "type": "state_code",
+      "required": true,
+      "constraints": ["pos_code_range", "pos_differs_from_supplier_state"],
+      "transform": "state_code_prefix",
+      "description": "Place of supply as 'NN-Name'; only the numeric prefix is retained. This table is inter-state by definition, so the place of supply must differ from the supplier's own state — except for an SEZ supplier, where the reference skips the check."
+    },
+    {
+      "id": "diff_percent",
+      "column": "Applicable % of Tax Rate",
+      "order": 4,
+      "type": "decimal",
+      "required": true,
+      "default": 100,
+      "enum": [100, 65],
+      "transform": "percent_to_factor",
+      "description": "Proportion of the tax rate that applies. Emitted as a factor (1.00 or 0.65)."
+    },
+    {
+      "id": "rt",
+      "column": "Rate",
+      "order": 5,
+      "type": "decimal",
+      "required": true,
+      "enum_ref": "../masters/tax-rates.json#/item",
+      "description": "Combined tax rate for this line, in percent. One row per rate."
+    },
+    {
+      "id": "txval",
+      "column": "Taxable Value",
+      "order": 6,
+      "type": "decimal",
+      "required": true,
+      "pattern": "^(\\d{0,11})(\\.\\d{0,2})?$",
+      "description": "Taxable value at this rate, excluding tax."
+    },
+    {
+      "id": "csamt",
+      "column": "Cess Amount",
+      "order": 7,
+      "type": "decimal",
+      "required": false,
+      "default": 0,
+      "pattern": "^(\\d{0,11})(\\.\\d{0,2})?$",
+      "description": "Cess payable on this line. Blank is treated as 0 here — see the divergence note."
+    },
+    {
+      "id": "etin",
+      "column": "E-Commerce GSTIN",
+      "order": 8,
+      "type": "gstin",
+      "required": false,
+      "must_be_empty": true,
+      "accepts": ["eco"],
+      "description": "Operator GSTIN. The template accepts 15 characters in this column, but import rejects any value: e-commerce supplies belong in the ECO tables."
+    }
+  ],
+
+  "rules": [
+    {
+      "id": "b2cl.etin_not_allowed",
+      "description": "Reproduces the reference behavior: this section carries no e-commerce operator GSTIN at all, despite the template's column allowing one.",
+      "assert": { "field": "etin", "empty": true },
+      "message": "E-Commerce GSTIN must be blank in the B2C(Large) section; report supplies through an operator in the ECO tables."
+    }
+  ],
+
+  "grouping": {
+    "envelope_key": ["pos"],
+    "invoice_key": ["inum"],
+    "invoice_key_case_insensitive": true,
+    "item_key": ["rt"],
+    "item_conflict": "last_wins",
+    "invoice_field_conflict": "error"
+  },
+
+  "output": {
+    "envelope": {
+      "keys": [
+        { "key": "pos", "from": "field:pos", "description": "One envelope object per place of supply — this section groups by state, not by recipient, because the recipients are unregistered." },
+        { "key": "inv", "from": "nested:invoice" }
+      ]
+    },
+    "invoice": {
+      "keys": [
+        { "key": "etin", "from": "field:etin", "omit_when_empty": true, "verify": "oracle", "description": "Always empty in this section; whether the key is emitted at all is unconfirmed." },
+        { "key": "inum", "from": "field:inum" },
+        { "key": "idt", "from": "field:idt", "description": "Normalized to DD-MM-YYYY." },
+        { "key": "val", "from": "field:val" },
+        { "key": "diff_percent", "from": "field:diff_percent", "description": "Factor, not percent: 1.00 or 0.65." },
+        { "key": "itms", "from": "nested:item" }
+      ]
+    },
+    "item": {
+      "keys": [
+        { "key": "num", "from": "derive:gstr1.item_num" },
+        { "key": "itm_det.txval", "from": "field:txval" },
+        { "key": "itm_det.rt", "from": "field:rt" },
+        { "key": "itm_det.iamt", "from": "derive:gstr1.tax_split", "description": "Integrated tax. Always present — this section is inter-state by definition, so no central/state split can arise." },
+        { "key": "itm_det.csamt", "from": "derive:gstr1.cess" }
+      ]
+    },
+    "derivations": ["gstr1.item_num", "gstr1.tax_split", "gstr1.cess"],
+    "derivation_notes": {
+      "gstr1.item_num": "Line item number is derived from the rate, not a sequence: num = rt * 100 + 1.",
+      "gstr1.tax_split": "Always resolves to inter-state for this section: iamt = round(txval * rt * 0.01 * diff_percent, 2). The shared derivation reaches that outcome because the section has no invoice-type field, and the pos_differs_from_supplier_state constraint guarantees the place of supply is never the supplier's own state.",
+      "gstr1.cess": "csamt = round(Cess Amount, 2), or 0 when blank."
+    }
+  },
+
+  "notes": [
+    {
+      "kind": "quirk",
+      "text": "The central/state tax branch of the reference's item mapping is unreachable for this section. It is guarded by 'place of supply equals the supplier's state AND the supplier is not an SEZ unit', but a non-SEZ row with a matching state is rejected before it gets there, and an SEZ supplier fails the second half of the guard. Every line therefore carries integrated tax, and camt/samt are deliberately absent from the payload mapping above.",
+      "affects": ["output.item"]
+    },
+    {
+      "kind": "divergence",
+      "text": "A blank Cess Amount is emitted as 0 here. The reference computes it without the empty-cell guard it uses in the B2B section, so a blank cell becomes NaN and serializes as null. Emitting null for a numeric tax field looks like a defect rather than an interface, so this implementation matches the B2B behavior instead. Needs differential capture to confirm what the portal actually receives.",
+      "affects": ["csamt"]
+    },
+    {
+      "kind": "quirk",
+      "text": "The invoice-value threshold is compared strictly: a value exactly equal to the threshold is rejected, not accepted. The official template's own column validation carries the post-August-2024 minimum of 100000, so a workbook prepared from the current template but filed for an earlier period must still clear the older 250000 bar.",
+      "affects": ["val"]
+    },
+    {
+      "kind": "quirk",
+      "text": "GSTN's shipped sample CSV for this table populates E-Commerce GSTIN on one row, which import rejects, and sets every invoice value to 250000.01 — a value that clears the pre-August-2024 threshold by one paisa but would fail for any period before it if the threshold were compared inclusively. Layout reference only, not a positive fixture.",
+      "affects": ["etin", "val"]
+    },
+    {
+      "kind": "quirk",
+      "text": "This section has no recipient GSTIN, receiver name, reverse-charge flag or invoice type: the recipients are unregistered, so the payload groups by place of supply instead of by counterparty.",
+      "affects": ["pos"]
+    },
+    {
+      "kind": "open_question",
+      "text": "The reference carries an internal 'diffval' field on the invoice object between import and generation; whether it reaches the upload JSON is unconfirmed.",
+      "affects": ["output.invoice"]
+    }
+  ]
+}

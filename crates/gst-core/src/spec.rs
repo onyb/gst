@@ -487,10 +487,11 @@ macro_rules! embedded_section {
 
 embedded_section!(GSTR1_B2B, "gstr1/b2b.json");
 embedded_section!(GSTR1_B2BA, "gstr1/b2ba.json");
+embedded_section!(GSTR1_B2CL, "gstr1/b2cl.json");
 
 /// Every section the engine knows, in the order a return reports them.
 pub fn sections() -> Vec<&'static SectionSpec> {
-    vec![&GSTR1_B2B, &GSTR1_B2BA]
+    vec![&GSTR1_B2B, &GSTR1_B2BA, &GSTR1_B2CL]
 }
 
 /// Look up a section by its code, e.g. `b2b`.
@@ -691,7 +692,7 @@ mod tests {
         assert!(section("b2b").is_some());
         assert!(section("b2ba").is_some());
         assert!(section("cdnr").is_none());
-        assert_eq!(section_codes(), ["b2b", "b2ba"]);
+        assert_eq!(section_codes(), ["b2b", "b2ba", "b2cl"]);
     }
 
     #[test]

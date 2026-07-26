@@ -227,7 +227,7 @@ fn report_text(
 
     let warnings = findings.len() - errors;
     println!(
-        "{errors} error(s), {warnings} warning(s); {envelopes} recipient envelope(s) would be generated"
+        "{errors} error(s), {warnings} warning(s); {envelopes} envelope(s) would be generated"
     );
 }
 
@@ -305,7 +305,7 @@ fn run_generate(workbook: &Path, filing: &Filing, output: &Path) -> ExitCode {
     }
 
     println!(
-        "wrote {} — {} recipient envelope(s) from {} of {} row(s)",
+        "wrote {} — {} envelope(s) from {} of {} row(s)",
         path.display(),
         grouped.envelopes.len(),
         report.records.len(),

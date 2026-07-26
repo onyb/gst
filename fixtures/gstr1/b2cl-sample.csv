@@ -1,0 +1,6 @@
+Invoice Number,Invoice date,Invoice Value,Place Of Supply,Applicable % of Tax Rate,Rate,Taxable Value,Cess Amount,E-Commerce GSTIN
+INV-L001,14-Jul-17,295000,37-Andhra Pradesh,,18,250000,
+INV-L002,15-Jul-17,283000,37-Andhra Pradesh,,18,200000,
+INV-L002,15-Jul-17,283000,37-Andhra Pradesh,,5,50000,
+INV-L003,20-Jul-17,278500,29-Karnataka,,12,250000,1500
+INV-L004,21-Jul-17,265250,32-Kerala,65,18,250000,
