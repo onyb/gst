@@ -1,0 +1,202 @@
+{
+  "$schema": "../section.schema.json",
+  "section": "b2csa",
+  "return": "gstr1",
+  "title": "Amended B2C(Small) Details - 10",
+
+  "provenance": {
+    "offline_tool": "V3.2.4",
+    "excel_template": "GSTR1_Excel_Workbook_Template_V2.2.xlsx",
+    "csv_template": "Section_wise_CSV_files/GSTR1/b2csa.csv",
+    "verified_on": "2026-07-26"
+  },
+
+  "source": {
+    "excel": {
+      "sheet": "b2csa",
+      "header_row": 4,
+      "first_data_row": 5
+    },
+    "csv": {
+      "file": "b2csa.csv",
+      "header_row": 1
+    }
+  },
+
+  "fields": [
+    {
+      "id": "fy",
+      "column": "Financial Year",
+      "order": 0,
+      "type": "text",
+      "required": true,
+      "enum_ref": "../masters/financial-years.json#/years",
+      "description": "Financial year of the period being amended, as 'YYYY-YY'. Needed alongside the month because Indian financial years run April to March, so a month name alone does not identify a calendar year."
+    },
+    {
+      "id": "omonth",
+      "column": "Original Month",
+      "order": 1,
+      "type": "text",
+      "required": true,
+      "enum_ref": "../masters/months.json#/names",
+      "description": "Month of the period being amended, spelled out in UPPERCASE. The reference's pattern is case-sensitive, so 'July' is rejected where 'JULY' is accepted."
+    },
+    {
+      "id": "pos",
+      "column": "Place Of Supply",
+      "order": 2,
+      "type": "state_code",
+      "required": true,
+      "constraints": ["pos_code_range"],
+      "transform": "state_code_prefix",
+      "description": "Place of supply as 'NN-Name'; only the numeric prefix is retained. The supplier's own state is allowed and is what makes a record intra-state."
+    },
+    {
+      "id": "typ",
+      "column": "Type",
+      "order": 3,
+      "type": "text",
+      "required": true,
+      "enum": ["OE"],
+      "description": "Supply channel. Only 'OE' is accepted on import, though the template's dropdown also offers 'E' — the same unreachable e-commerce branch as the unamended section."
+    },
+    {
+      "id": "diff_percent",
+      "column": "Applicable % of Tax Rate",
+      "order": 4,
+      "type": "decimal",
+      "required": true,
+      "default": 100,
+      "enum": [100, 65],
+      "transform": "percent_to_factor",
+      "description": "Proportion of the tax rate that applies. Emitted as a factor, and dropped entirely when it is 1."
+    },
+    {
+      "id": "rt",
+      "column": "Rate",
+      "order": 5,
+      "type": "decimal",
+      "required": true,
+      "enum_ref": "../masters/tax-rates.json#/item",
+      "description": "Combined tax rate for this line, in percent. Several rates for one amended period become several line items of one record."
+    },
+    {
+      "id": "txval",
+      "column": "Taxable Value",
+      "order": 6,
+      "type": "decimal",
+      "required": true,
+      "pattern": "^(-?(\\d{0,11})(\\.\\d{0,2})?)$",
+      "description": "Corrected taxable value at this rate, excluding tax. May be negative, as in the unamended section."
+    },
+    {
+      "id": "csamt",
+      "column": "Cess Amount",
+      "order": 7,
+      "type": "decimal",
+      "required": false,
+      "default": 0,
+      "pattern": "^(-?(\\d{0,11})(\\.\\d{0,2})?)$",
+      "description": "Corrected cess at this rate. May be negative. Blank is treated as 0."
+    },
+    {
+      "id": "etin",
+      "column": "E-Commerce GSTIN",
+      "order": 8,
+      "type": "gstin",
+      "required": false,
+      "must_be_empty": true,
+      "accepts": ["eco"],
+      "description": "Operator GSTIN. Reachable only for a Type of 'E', which import rejects, so in practice always blank."
+    }
+  ],
+
+  "rules": [
+    {
+      "id": "b2csa.etin_not_allowed",
+      "description": "The e-commerce branch is unreachable, so no operator GSTIN can ever be accepted here.",
+      "assert": { "field": "etin", "empty": true },
+      "message": "E-Commerce GSTIN must be blank: import accepts only Type 'OE', and an 'OE' row carries no operator GSTIN."
+    }
+  ],
+
+  "grouping": {
+    "invoice_key": ["fy", "omonth", "pos", "typ", "diff_percent"],
+    "item_key": ["rt"],
+    "item_conflict": "last_wins",
+    "invoice_field_conflict": "error"
+  },
+
+  "output": {
+    "invoice": {
+      "keys": [
+        { "key": "omon", "from": "derive:gstr1.original_period", "description": "The amended period as MMYYYY, worked out from the financial year and month name." },
+        { "key": "sply_ty", "from": "derive:gstr1.supply_type", "description": "'INTRA' or 'INTER', derived from the place of supply against the filer's own state." },
+        { "key": "typ", "from": "field:typ" },
+        { "key": "etin", "from": "field:etin", "omit_when_empty": true, "verify": "oracle", "description": "Always empty in practice; whether the key is emitted at all is unconfirmed." },
+        { "key": "pos", "from": "field:pos", "description": "Two-digit state code." },
+        { "key": "diff_percent", "from": "field:diff_percent", "omit_when_value": 1, "description": "Dropped when the factor is 1." },
+        { "key": "itms", "from": "nested:item" }
+      ]
+    },
+    "item": {
+      "keys": [
+        { "key": "rt", "from": "field:rt" },
+        { "key": "txval", "from": "field:txval" },
+        { "key": "camt", "from": "derive:gstr1.tax_split_by_pos", "omit_when_empty": true, "description": "Central tax. Present on intra-state records only." },
+        { "key": "samt", "from": "derive:gstr1.tax_split_by_pos", "omit_when_empty": true, "description": "State/UT tax. Present on intra-state records only, always equal to camt." },
+        { "key": "iamt", "from": "derive:gstr1.tax_split_by_pos", "omit_when_empty": true, "description": "Integrated tax. Present on inter-state records only." },
+        { "key": "csamt", "from": "derive:gstr1.tax_split_by_pos" }
+      ]
+    },
+    "derivations": [
+      "gstr1.original_period",
+      "gstr1.supply_type",
+      "gstr1.tax_split_by_pos"
+    ],
+    "derivation_notes": {
+      "gstr1.original_period": "MMYYYY for the period being amended, from the financial year and month name. Indian financial years run April to March, so JANUARY of 2017-18 is 012018 while JULY of 2017-18 is 072017.",
+      "gstr1.supply_type": "'INTRA' when the place of supply equals the filer's own state and the filer is not an SEZ unit; 'INTER' otherwise.",
+      "gstr1.tax_split_by_pos": "No invoice-type gate, as in the unamended section. Intra-state: camt = samt = round(txval * rt * 0.005 * diff_percent, 2). Inter-state: iamt = round(txval * rt * 0.01 * diff_percent, 2). csamt = round(Cess Amount, 2), or 0 when blank."
+    }
+  },
+
+  "notes": [
+    {
+      "kind": "quirk",
+      "text": "Records sit at the TOP LEVEL of the payload but still carry line items — there is no envelope object above them. That makes this section's shape different from both the nested invoice sections and the flat unamended B2C(Small) table, which has no items at all.",
+      "affects": ["output.invoice"]
+    },
+    {
+      "kind": "quirk",
+      "text": "Line items here carry no 'num' and no 'itm_det' wrapper: the rate, taxable value and tax amounts sit directly on the item object. Every other section seen so far numbers its items and nests them under itm_det.",
+      "affects": ["output.item"]
+    },
+    {
+      "kind": "quirk",
+      "text": "The period being amended is identified by a spelled-out month plus a financial year rather than a date, and the month must be UPPERCASE — the reference's month pattern is case-sensitive even though its own period lookup compares case-insensitively.",
+      "affects": ["fy", "omonth"]
+    },
+    {
+      "kind": "quirk",
+      "text": "The e-commerce branch is unreachable, exactly as in the unamended section: import requires Type to match '^(OE)$' while the operator-GSTIN requirement is guarded by Type being 'E', and the two are combined with AND. GSTN's own sample CSV uses 'E' on its first row, which import rejects.",
+      "affects": ["typ", "etin"]
+    },
+    {
+      "kind": "quirk",
+      "text": "The Excel template and the section CSV disagree on column order: the sheet is ... Type, Applicable % of Tax Rate, Rate, ... while the CSV is ... Type, Rate, Applicable % of Tax Rate, ... — the same swap as the unamended section. `order` here follows the Excel template; import matches on header text so both read correctly.",
+      "affects": ["diff_percent", "rt"]
+    },
+    {
+      "kind": "open_question",
+      "text": "Nothing checks that the amended period precedes the period being filed. The reference only confirms the financial year and month exist in its own dropdown list, which is built from available periods, so an amendment pointing at a future month may be accepted here. The list itself is fixed and ends at 2027-28.",
+      "affects": ["fy", "omonth"]
+    },
+    {
+      "kind": "open_question",
+      "text": "The reference carries internal 'diffval' and 'oyear' fields on the record between import and generation, and deletes 'oyear' at generation time. Whether 'diffval' reaches the upload JSON is unconfirmed.",
+      "affects": ["output.invoice"]
+    }
+  ]
+}
