@@ -1,0 +1,6 @@
+Original Invoice Number,Original Invoice date,Original Place Of Supply,Revised Invoice Number,Revised Invoice date,Invoice Value,Applicable % of Tax Rate,Rate,Taxable Value,Cess Amount,E-Commerce GSTIN
+INV-L001,14-Jul-17,37-Andhra Pradesh,INV-L001-R,05-Sep-17,295000,,18,250000,,
+INV-L002,15-Jul-17,37-Andhra Pradesh,INV-L002,06-Sep-17,283000,,18,200000,,
+INV-L002,15-Jul-17,37-Andhra Pradesh,INV-L002,06-Sep-17,283000,,5,50000,,
+INV-L003,20-Jul-17,29-Karnataka,INV-L003-R,07-Sep-17,278500,,12,250000,1500,
+INV-L004,21-Jul-17,32-Kerala,INV-L004-R,08-Sep-17,265250,65,18,250000,,

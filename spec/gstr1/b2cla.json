@@ -1,0 +1,244 @@
+{
+  "$schema": "../section.schema.json",
+  "section": "b2cla",
+  "return": "gstr1",
+  "title": "Amended B2C(Large) Invoices - 10",
+
+  "provenance": {
+    "offline_tool": "V3.2.4",
+    "excel_template": "GSTR1_Excel_Workbook_Template_V2.2.xlsx",
+    "csv_template": "Section_wise_CSV_files/GSTR1/b2cla.csv",
+    "verified_on": "2026-07-26"
+  },
+
+  "source": {
+    "excel": {
+      "sheet": "b2cla",
+      "header_row": 4,
+      "first_data_row": 5
+    },
+    "csv": {
+      "file": "b2cla.csv",
+      "header_row": 1
+    }
+  },
+
+  "fields": [
+    {
+      "id": "oinum",
+      "column": "Original Invoice Number",
+      "order": 0,
+      "type": "text",
+      "required": true,
+      "pattern": "^[a-zA-Z0-9\\-/]{1,16}$",
+      "max_length": 16,
+      "constraints": ["numeric_value_not_zero"],
+      "description": "Invoice number as originally reported. Identifies which already-filed high-value invoice this row amends."
+    },
+    {
+      "id": "oidt",
+      "column": "Original Invoice date",
+      "order": 1,
+      "type": "date",
+      "required": true,
+      "constraints": ["date_within_return_window"],
+      "transform": "date_normalize",
+      "description": "Invoice date as originally reported. Usually falls in an earlier return period, which the window permits."
+    },
+    {
+      "id": "pos",
+      "column": "Original Place Of Supply",
+      "order": 2,
+      "type": "state_code",
+      "required": true,
+      "constraints": ["pos_code_range", "pos_differs_from_supplier_state"],
+      "transform": "state_code_prefix",
+      "description": "Place of supply as originally reported, given as 'NN-Name'; only the numeric prefix is retained. There is no revised counterpart — this table cannot amend the place of supply, and the original value is both the grouping key and the input to the tax split."
+    },
+    {
+      "id": "inum",
+      "column": "Revised Invoice Number",
+      "order": 3,
+      "type": "text",
+      "required": true,
+      "pattern": "^[a-zA-Z0-9\\-/]{1,16}$",
+      "max_length": 16,
+      "constraints": ["numeric_value_not_zero"],
+      "description": "Corrected invoice number. May equal the original when only other details changed."
+    },
+    {
+      "id": "idt",
+      "column": "Revised Invoice date",
+      "order": 4,
+      "type": "date",
+      "required": true,
+      "constraints": ["date_within_return_window"],
+      "transform": "date_normalize",
+      "description": "Corrected invoice date."
+    },
+    {
+      "id": "val",
+      "column": "Invoice Value",
+      "order": 5,
+      "type": "decimal",
+      "required": true,
+      "pattern": "^(\\d{0,13})(\\.\\d{0,2})?$",
+      "constraints": [
+        {
+          "name": "min_exclusive",
+          "value": 250000,
+          "until_period": "082024",
+          "description": "Before August 2024 an invoice belonged in this table only above 2,50,000."
+        },
+        {
+          "name": "min_exclusive",
+          "value": 100000,
+          "from_period": "082024",
+          "description": "From August 2024 the threshold dropped to 1,00,000."
+        }
+      ],
+      "description": "Corrected total invoice value including tax. The same period-dependent threshold as the unamended section applies, judged against the period being filed rather than the period the original invoice belonged to."
+    },
+    {
+      "id": "diff_percent",
+      "column": "Applicable % of Tax Rate",
+      "order": 6,
+      "type": "decimal",
+      "required": true,
+      "default": 100,
+      "enum": [100, 65],
+      "transform": "percent_to_factor",
+      "description": "Proportion of the tax rate that applies. Emitted as a factor (1.00 or 0.65)."
+    },
+    {
+      "id": "rt",
+      "column": "Rate",
+      "order": 7,
+      "type": "decimal",
+      "required": true,
+      "enum_ref": "../masters/tax-rates.json#/item",
+      "description": "Corrected combined tax rate for this line, in percent. One row per rate."
+    },
+    {
+      "id": "txval",
+      "column": "Taxable Value",
+      "order": 8,
+      "type": "decimal",
+      "required": true,
+      "pattern": "^(\\d{0,11})(\\.\\d{0,2})?$",
+      "description": "Corrected taxable value at this rate, excluding tax."
+    },
+    {
+      "id": "csamt",
+      "column": "Cess Amount",
+      "order": 9,
+      "type": "decimal",
+      "required": false,
+      "default": 0,
+      "pattern": "^(\\d{0,11})(\\.\\d{0,2})?$",
+      "description": "Corrected cess payable on this line. Blank is treated as 0 here — see the divergence note."
+    },
+    {
+      "id": "etin",
+      "column": "E-Commerce GSTIN",
+      "order": 10,
+      "type": "gstin",
+      "required": false,
+      "must_be_empty": true,
+      "accepts": ["eco"],
+      "description": "Operator GSTIN. The template accepts 15 characters in this column, but import rejects any value."
+    }
+  ],
+
+  "rules": [
+    {
+      "id": "b2cla.etin_not_allowed",
+      "description": "Reproduces the reference behavior: this section carries no e-commerce operator GSTIN at all, despite the template's column allowing one.",
+      "assert": { "field": "etin", "empty": true },
+      "message": "E-Commerce GSTIN must be blank in the amended B2C(Large) section; report supplies through an operator in the ECO tables."
+    }
+  ],
+
+  "grouping": {
+    "envelope_key": ["pos"],
+    "invoice_key": ["inum"],
+    "invoice_key_case_insensitive": true,
+    "item_key": ["rt"],
+    "item_conflict": "last_wins",
+    "invoice_field_conflict": "error"
+  },
+
+  "output": {
+    "envelope": {
+      "keys": [
+        { "key": "pos", "from": "field:pos", "description": "One envelope object per original place of supply." },
+        { "key": "inv", "from": "nested:invoice" }
+      ]
+    },
+    "invoice": {
+      "keys": [
+        { "key": "oinum", "from": "field:oinum" },
+        { "key": "oidt", "from": "field:oidt", "description": "Normalized to DD-MM-YYYY." },
+        { "key": "etin", "from": "field:etin", "omit_when_empty": true, "verify": "oracle", "description": "Always empty in this section; whether the key is emitted at all is unconfirmed." },
+        { "key": "inum", "from": "field:inum" },
+        { "key": "idt", "from": "field:idt", "description": "Normalized to DD-MM-YYYY." },
+        { "key": "val", "from": "field:val" },
+        { "key": "diff_percent", "from": "field:diff_percent", "description": "Factor, not percent: 1.00 or 0.65." },
+        { "key": "itms", "from": "nested:item" }
+      ]
+    },
+    "item": {
+      "keys": [
+        { "key": "num", "from": "derive:gstr1.item_num" },
+        { "key": "itm_det.txval", "from": "field:txval" },
+        { "key": "itm_det.rt", "from": "field:rt" },
+        { "key": "itm_det.iamt", "from": "derive:gstr1.tax_split", "description": "Integrated tax. Always present — this section is inter-state by definition, so no central/state split can arise." },
+        { "key": "itm_det.csamt", "from": "derive:gstr1.cess" }
+      ]
+    },
+    "derivations": ["gstr1.item_num", "gstr1.tax_split", "gstr1.cess"],
+    "derivation_notes": {
+      "gstr1.item_num": "Line item number is derived from the rate, not a sequence: num = rt * 100 + 1.",
+      "gstr1.tax_split": "Always resolves to inter-state, exactly as in the unamended section: iamt = round(txval * rt * 0.01 * diff_percent, 2). Note the reference reads the ORIGINAL place of supply when deciding the split for this section, which is the only place of supply the table carries.",
+      "gstr1.cess": "csamt = round(Cess Amount, 2), or 0 when blank."
+    }
+  },
+
+  "notes": [
+    {
+      "kind": "quirk",
+      "text": "This table has no revised place of supply. The reference's own label set defines one, but the template does not offer the column, so an incorrectly reported place of supply cannot be fixed here — the original value is carried through as the payload's pos and drives the tax split.",
+      "affects": ["pos"]
+    },
+    {
+      "kind": "quirk",
+      "text": "The central/state tax branch is unreachable for this section for the same reason as the unamended one: a non-SEZ row whose original place of supply equals the supplier's state is rejected before the split runs, and an SEZ supplier fails the other half of the guard. camt/samt are therefore deliberately absent from the payload mapping.",
+      "affects": ["output.item"]
+    },
+    {
+      "kind": "quirk",
+      "text": "The value threshold is judged against the period being filed, not the period the original invoice belonged to. An amendment filed after August 2024 to an invoice originally reported under the 2,50,000 regime is therefore measured against 1,00,000.",
+      "affects": ["val"]
+    },
+    {
+      "kind": "quirk",
+      "text": "Nothing requires the revised date to follow the original, or to fall in the period being filed: the routine that looks like it enforces date ordering is unreachable, returning true before any check runs.",
+      "affects": ["oidt", "idt"]
+    },
+    {
+      "kind": "divergence",
+      "text": "A blank Cess Amount is emitted as 0 here. The reference computes it without the empty-cell guard it uses in the B2B sections, so a blank cell becomes NaN and serializes as null. Matching the B2B behavior instead; needs differential capture to confirm what the portal receives.",
+      "affects": ["csamt"]
+    },
+    {
+      "kind": "open_question",
+      "text": "The reference groups rows into one amendment when EITHER the revised number OR the original number matches, then rejects the group if any other invoice-level field disagrees. Grouping here keys on the revised number alone, matching the tool's own declared key, so rows sharing an original number but differing in revised number become separate records where the reference would reject them. Same unresolved question as the amended B2B section.",
+      "affects": ["oinum", "inum"]
+    },
+    {
+      "kind": "quirk",
+      "text": "GSTN's shipped sample CSV for this table sets every invoice value to 250000.01 while giving taxable values well above it (345600 against 250000.01 on the first row). Nothing validates taxable value against invoice value, so such rows import cleanly. Layout reference only, not a positive fixture.",
+      "affects": ["val", "txval"]
+    }
+  ]
+}
