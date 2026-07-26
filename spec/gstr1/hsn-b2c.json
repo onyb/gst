@@ -61,7 +61,8 @@
       "type": "decimal",
       "required": true,
       "pattern": "^(-?(\\d{0,13})(\\.\\d{0,2})?)$",
-      "description": "Total quantity supplied under this code and rate. May be negative."
+      "description": "Total quantity supplied under this code and rate. May be negative.",
+      "round_to": 2
     },
     {
       "id": "total_value",
@@ -70,7 +71,8 @@
       "type": "decimal",
       "required": false,
       "pattern": "^(-?(\\d{0,13})(\\.\\d{0,2})?)$",
-      "description": "Total value including tax. Present in the template but NOT carried into the payload \u2014 see notes."
+      "description": "Total value including tax. Present in the template but NOT carried into the payload \u2014 see notes.",
+      "round_to": 2
     },
     {
       "id": "rt",
@@ -88,7 +90,8 @@
       "type": "decimal",
       "required": true,
       "pattern": "^(-?(\\d{0,13})(\\.\\d{0,2})?)$",
-      "description": "Taxable value under this code and rate, excluding tax. May be negative."
+      "description": "Taxable value under this code and rate, excluding tax. May be negative.",
+      "round_to": 2
     },
     {
       "id": "iamt",
@@ -98,7 +101,8 @@
       "required": false,
       "default": 0,
       "pattern": "^(-?(\\d{0,13})(\\.\\d{0,2})?)$",
-      "description": "Integrated tax. ENTERED, not derived \u2014 this is the only section where the filer supplies the tax rather than the engine computing it. Required unless both central and state tax are given."
+      "description": "Integrated tax. ENTERED, not derived \u2014 this is the only section where the filer supplies the tax rather than the engine computing it. Required unless both central and state tax are given.",
+      "round_to": 2
     },
     {
       "id": "camt",
@@ -108,7 +112,8 @@
       "required": false,
       "default": 0,
       "pattern": "^(-?(\\d{0,13})(\\.\\d{0,2})?)$",
-      "description": "Central tax, entered. Required together with state tax when integrated tax is absent."
+      "description": "Central tax, entered. Required together with state tax when integrated tax is absent.",
+      "round_to": 2
     },
     {
       "id": "samt",
@@ -118,7 +123,8 @@
       "required": false,
       "default": 0,
       "pattern": "^(-?(\\d{0,13})(\\.\\d{0,2})?)$",
-      "description": "State/UT tax, entered. Required together with central tax when integrated tax is absent."
+      "description": "State/UT tax, entered. Required together with central tax when integrated tax is absent.",
+      "round_to": 2
     },
     {
       "id": "csamt",
@@ -128,7 +134,8 @@
       "required": false,
       "default": 0,
       "pattern": "^(-?(\\d{0,13})(\\.\\d{0,2})?)$",
-      "description": "Cess, entered. Always optional."
+      "description": "Cess, entered. Always optional.",
+      "round_to": 2
     }
   ],
   "rules": [
@@ -302,6 +309,13 @@
       "text": "Codes with a leading zero are a real hazard in Excel. A filer typing 0101 into a general-format cell gets the NUMBER 101, and the leading zero is gone by the time any tool reads the file; the code then fails the length check and, being absent from the code table, cannot be reported at all. The template guards column A with a text-length rule rather than a numeric one, but that does not force the cell's type. The same loss happens in the reference.",
       "affects": [
         "hsn_sc"
+      ]
+    },
+    {
+      "kind": "divergence",
+      "text": "The Description column is effectively unchecked. The reference builds a pattern for it and then, because of the missing-braces bug in this section's validation, never applies it \u2014 a description with illegal characters or well over the 30-character limit imports cleanly. This implementation enforces the pattern the reference clearly intended. Confirmed by differential test: the tool accepted both 'A$B#C' and a 34-character description.",
+      "affects": [
+        "user_desc"
       ]
     }
   ]

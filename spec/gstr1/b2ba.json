@@ -195,7 +195,8 @@
       "required": false,
       "default": 0,
       "pattern": "^(\\d{0,11})(\\.\\d{0,2})?$",
-      "description": "Corrected cess payable on this line. Blank is treated as 0."
+      "description": "Corrected cess payable on this line. Blank is treated as 0.",
+      "round_to": 2
     }
   ],
   "rules": [

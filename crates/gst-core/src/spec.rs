@@ -169,6 +169,9 @@ pub struct Field {
     #[serde(rename = "enum")]
     pub allowed: Option<Vec<SpecValue>>,
     pub max_length: Option<usize>,
+    /// Decimal places this amount is rounded to before its pattern is
+    /// checked, mirroring the reference's numeric conversion.
+    pub round_to: Option<u32>,
     #[serde(default)]
     pub constraints: Vec<Constraint>,
     pub transform: Option<String>,

@@ -92,7 +92,8 @@
       "type": "decimal",
       "required": true,
       "pattern": "^(-?(\\d{0,11})(\\.\\d{0,2})?)$",
-      "description": "Corrected taxable value at this rate, excluding tax. May be negative, as in the unamended section."
+      "description": "Corrected taxable value at this rate, excluding tax. May be negative, as in the unamended section.",
+      "round_to": 2
     },
     {
       "id": "csamt",
@@ -102,7 +103,8 @@
       "required": false,
       "default": 0,
       "pattern": "^(-?(\\d{0,11})(\\.\\d{0,2})?)$",
-      "description": "Corrected cess at this rate. May be negative. Blank is treated as 0."
+      "description": "Corrected cess at this rate. May be negative. Blank is treated as 0.",
+      "round_to": 2
     },
     {
       "id": "etin",

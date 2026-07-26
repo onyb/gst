@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use regex::Regex;
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, RoundingStrategy};
 
 use crate::date::{self, DateError, ReturnPeriod};
 use crate::gstin;
@@ -200,6 +200,21 @@ fn validate_field(field: &Field, raw: &str, ctx: &FilingContext) -> Result<Cell,
     // '1,234,567' to 1234, so this strips them all.
     if field.ty == FieldType::Decimal {
         text = text.replace(',', "");
+    }
+
+    // The reference converts several amounts with a helper that rounds to two
+    // places BEFORE testing the pattern, so a value carrying more places is
+    // quietly rounded rather than rejected — and the rounded value is what
+    // reaches the payload. Only fields the reference actually wraps in that
+    // conversion declare `round_to`; the rest still reject the extra places.
+    if let Some(places) = field.round_to
+        && field.ty == FieldType::Decimal
+        && let Ok(value) = text.parse::<Decimal>()
+    {
+        text = value
+            .round_dp_with_strategy(places, RoundingStrategy::MidpointAwayFromZero)
+            .normalize()
+            .to_string();
     }
 
     // `state_code` cells arrive as 'NN-Name'; every later check wants the code.

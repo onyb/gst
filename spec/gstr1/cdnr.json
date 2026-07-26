@@ -127,7 +127,8 @@
       "type": "decimal",
       "required": true,
       "pattern": "^(\\d{0,13})(\\.\\d{0,2})?$",
-      "description": "Total value of the note including tax. Non-negative: the pattern admits no sign, and a credit note is signalled by the note type rather than by a negative value."
+      "description": "Total value of the note including tax. Non-negative: the pattern admits no sign, and a credit note is signalled by the note type rather than by a negative value.",
+      "round_to": 2
     },
     {
       "id": "diff_percent",
@@ -166,7 +167,8 @@
           "description": "Must be strictly positive \u2014 a zero taxable value is rejected outright, unlike every earlier section."
         }
       ],
-      "description": "Taxable value at this rate, excluding tax. Strictly greater than zero."
+      "description": "Taxable value at this rate, excluding tax. Strictly greater than zero.",
+      "round_to": 2
     },
     {
       "id": "csamt",
@@ -176,7 +178,8 @@
       "required": false,
       "default": 0,
       "pattern": "^(\\d{0,11})(\\.\\d{0,2})?$",
-      "description": "Cess on this line. Blank is treated as 0; negatives are rejected by the pattern."
+      "description": "Cess on this line. Blank is treated as 0; negatives are rejected by the pattern.",
+      "round_to": 2
     }
   ],
   "rules": [
@@ -403,6 +406,13 @@
       "text": "The internal 'diffval' flag never reaches the upload JSON \u2014 the reference deletes it alongside the tax-rate factor. This resolves what was previously an open question. Verified against a file captured from the tool.",
       "affects": [
         "output"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "A BLANK NOTE SUPPLY TYPE CRASHES THE OFFICIAL TOOL'S IMPORT. Its label-to-code helper calls .trim() on the cell without checking it exists, so an absent value raises an unhandled TypeError; the exception escapes the request handler and the import never responds at all. A filer whose sheet has one such row sees the import spin forever with no error message. This implementation reports it as an ordinary missing-field error on that row. Found by differential test against the tool.",
+      "affects": [
+        "inv_typ"
       ]
     }
   ]

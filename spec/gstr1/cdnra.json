@@ -151,7 +151,8 @@
       "type": "decimal",
       "required": true,
       "pattern": "^(\\d{0,13})(\\.\\d{0,2})?$",
-      "description": "Corrected total value of the note including tax. Non-negative."
+      "description": "Corrected total value of the note including tax. Non-negative.",
+      "round_to": 2
     },
     {
       "id": "diff_percent",
@@ -190,7 +191,8 @@
           "description": "Must be strictly positive \u2014 a zero taxable value is rejected."
         }
       ],
-      "description": "Corrected taxable value at this rate, excluding tax. Strictly positive."
+      "description": "Corrected taxable value at this rate, excluding tax. Strictly positive.",
+      "round_to": 2
     },
     {
       "id": "csamt",
@@ -200,7 +202,8 @@
       "required": false,
       "default": 0,
       "pattern": "^(\\d{0,11})(\\.\\d{0,2})?$",
-      "description": "Corrected cess on this line. Blank is treated as 0."
+      "description": "Corrected cess on this line. Blank is treated as 0.",
+      "round_to": 2
     }
   ],
   "rules": [
@@ -428,6 +431,20 @@
       "text": "The internal 'diffval' flag never reaches the upload JSON \u2014 the reference deletes it alongside the tax-rate factor. This resolves what was previously an open question. Verified against a file captured from the tool.",
       "affects": [
         "output"
+      ]
+    },
+    {
+      "kind": "divergence",
+      "text": "Receiver Name is not length-checked in this section, so a name far beyond the 99 characters the reference allows elsewhere imports cleanly. This implementation applies the same 99-character pattern the other sections use. The field never reaches the portal in any case \u2014 it is stripped from the upload file \u2014 so the divergence costs nothing. Confirmed by differential test.",
+      "affects": [
+        "cname"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "A BLANK NOTE SUPPLY TYPE CRASHES THE OFFICIAL TOOL'S IMPORT. Its label-to-code helper calls .trim() on the cell without checking it exists, so an absent value raises an unhandled TypeError; the exception escapes the request handler and the import never responds at all. A filer whose sheet has one such row sees the import spin forever with no error message. This implementation reports it as an ordinary missing-field error on that row. Found by differential test against the tool.",
+      "affects": [
+        "inv_typ"
       ]
     }
   ]

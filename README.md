@@ -25,6 +25,13 @@ us wrong, including that empty sections are omitted rather than emitted as
 `[]`, that the recipient's name is stripped before upload, and that a blank cess
 amount in the B2C(Large) tables produces no key at all rather than a zero.
 
+The validation rules get the same treatment from the other side.
+`scripts/validation_differential.py` derives a violating row from every
+constraint the spec declares and feeds it to both validators: 384 cases, and
+zero where the official tool rejects something we accept. It found a real bug
+(53 amount fields rejected a third decimal place the reference quietly rounds)
+and two rows that crash the official tool outright.
+
 So the spec is the product as much as the CLI: an independent, testable
 description of the GST return formats that anyone can build on.
 

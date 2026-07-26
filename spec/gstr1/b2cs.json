@@ -75,7 +75,8 @@
       "type": "decimal",
       "required": true,
       "pattern": "^(-?(\\d{0,11})(\\.\\d{0,2})?)$",
-      "description": "Total taxable value of small supplies at this rate, excluding tax. MAY BE NEGATIVE \u2014 this is the only section so far that permits it, so a net downward adjustment can be reported without a credit note."
+      "description": "Total taxable value of small supplies at this rate, excluding tax. MAY BE NEGATIVE \u2014 this is the only section so far that permits it, so a net downward adjustment can be reported without a credit note.",
+      "round_to": 2
     },
     {
       "id": "csamt",
@@ -85,7 +86,8 @@
       "required": false,
       "default": 0,
       "pattern": "^(-?(\\d{0,11})(\\.\\d{0,2})?)$",
-      "description": "Cess payable at this rate. May also be negative. Blank is treated as 0."
+      "description": "Cess payable at this rate. May also be negative. Blank is treated as 0.",
+      "round_to": 2
     },
     {
       "id": "etin",

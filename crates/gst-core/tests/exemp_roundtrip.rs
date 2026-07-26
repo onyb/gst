@@ -146,17 +146,25 @@ fn negative_amounts_are_accepted() {
 }
 
 #[test]
-fn an_amount_beyond_the_declared_precision_is_rejected() {
-    for bad in ["1.234", "123456789012"] {
-        let report = validate(nil(), &[with(5, "Nil Rated Supplies", bad)], &ctx());
-        assert!(
-            report
-                .errors()
-                .any(|f| f.column.as_deref() == Some("Nil Rated Supplies")),
-            "'{bad}' should be rejected: {:?}",
-            report.findings
-        );
-    }
+fn a_third_decimal_place_is_rounded_rather_than_rejected() {
+    // The reference converts these amounts with a helper that rounds to two
+    // places before testing the pattern, so the extra place is accepted and
+    // the rounded value is what reaches the payload. Confirmed by feeding the
+    // same row to the official tool.
+    let json = payload(&[with(5, "Nil Rated Supplies", "1.234")], &ctx());
+    assert!(json.contains(r#""nil_amt":1.23"#), "{json}");
+}
+
+#[test]
+fn an_amount_beyond_the_declared_width_is_rejected() {
+    let report = validate(nil(), &[with(5, "Nil Rated Supplies", "123456789012")], &ctx());
+    assert!(
+        report
+            .errors()
+            .any(|f| f.column.as_deref() == Some("Nil Rated Supplies")),
+        "{:?}",
+        report.findings
+    );
 }
 
 #[test]

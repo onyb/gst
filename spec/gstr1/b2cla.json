@@ -137,7 +137,8 @@
       "type": "decimal",
       "required": true,
       "pattern": "^(\\d{0,11})(\\.\\d{0,2})?$",
-      "description": "Corrected taxable value at this rate, excluding tax."
+      "description": "Corrected taxable value at this rate, excluding tax.",
+      "round_to": 2
     },
     {
       "id": "csamt",
@@ -146,7 +147,8 @@
       "type": "decimal",
       "required": false,
       "pattern": "^(\\d{0,11})(\\.\\d{0,2})?$",
-      "description": "Cess payable on this line. A blank cell produces no csamt key in the payload rather than a zero \u2014 see the quirk note."
+      "description": "Cess payable on this line. A blank cell produces no csamt key in the payload rather than a zero \u2014 see the quirk note.",
+      "round_to": 2
     },
     {
       "id": "etin",

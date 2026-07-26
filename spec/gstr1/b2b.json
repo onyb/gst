@@ -81,7 +81,8 @@
       "type": "decimal",
       "required": true,
       "pattern": "^(\\d{0,13})(\\.\\d{0,2})?$",
-      "description": "Total invoice value including tax. Non-negative, up to 13 integer digits and 2 decimals. Repeated on every rate row of the same invoice and must agree across them."
+      "description": "Total invoice value including tax. Non-negative, up to 13 integer digits and 2 decimals. Repeated on every rate row of the same invoice and must agree across them.",
+      "round_to": 2
     },
     {
       "id": "pos",
@@ -160,7 +161,8 @@
       "type": "decimal",
       "required": true,
       "pattern": "^(\\d{0,11})(\\.\\d{0,2})?$",
-      "description": "Taxable value at this rate, excluding tax. Non-negative, up to 11 integer digits and 2 decimals."
+      "description": "Taxable value at this rate, excluding tax. Non-negative, up to 11 integer digits and 2 decimals.",
+      "round_to": 2
     },
     {
       "id": "csamt",
@@ -170,7 +172,8 @@
       "required": false,
       "default": 0,
       "pattern": "^(\\d{0,11})(\\.\\d{0,2})?$",
-      "description": "Cess payable on this line. Entered directly rather than derived from a rate; blank is treated as 0."
+      "description": "Cess payable on this line. Entered directly rather than derived from a rate; blank is treated as 0.",
+      "round_to": 2
     }
   ],
   "rules": [

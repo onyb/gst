@@ -49,6 +49,53 @@ text layouts and Excel serials — but it cannot rescue a workbook that the
 official tool will reject, so the constraint is recorded here rather than
 quietly worked around.
 
+## Validation, checked against the tool
+
+Every rule here is a claim about what GSTN's tool rejects, and those claims were
+wrong often enough to be worth testing rather than trusting.
+`scripts/validation_differential.py` does that by construction: for each
+declared constraint on each field it builds a row violating it, feeds that row
+to both validators, and compares the verdicts. The tool's verdict is read from
+the working file it writes — with one data row in one sheet, an empty section
+means the row was rejected — which is more reliable than its error lists, since
+those mix row numbers with invoice numbers and leave some rejections unreported.
+
+Latest run: **384 cases, 347 agree, 0 misses.** A miss would be the tool
+rejecting a row this implementation called clean, which is the direction that
+matters — it would mean handing a filer a return the portal refuses. There are
+none.
+
+The 35 remaining disagreements are all this implementation being **stricter**,
+and each was checked by looking at what the tool actually emits rather than
+trusting its accept:
+
+| What the tool accepts | What it then emits | Why we reject |
+|---|---|---|
+| A blank taxable value | `txval: 0` with `iamt: null` | A line with no taxable value is a filer error, and the reference builds a broken item out of it |
+| An unknown invoice type or note supply type | The `inv_typ` key vanishes from the record | A record missing a mandatory field is worse than a rejected row |
+| A non-numeric `Applicable % of Tax Rate` | Nothing — it becomes `NaN`, fails no numeric guard, and is dropped | `50` is properly rejected but `ZZBOGUS` is not; silently discarding the filer's intent is worse than saying so |
+| An unknown UQC | An unmapped code the portal will not recognise | Same reasoning |
+| A negative cess on an export | A negative `csamt` | Exports never validate the cess column at all |
+| An over-long or illegally-punctuated HSN description | The value unchanged | The reference builds the pattern and then never applies it — a missing-braces bug |
+
+Two cases are worse than a disagreement: **a blank Note Supply Type crashes the
+tool outright.** Its label-to-code helper calls `.trim()` on a cell it never
+checks exists, the resulting TypeError escapes the request handler, and the
+import hangs with no response. A filer sees the import spin forever. Recorded
+in `gstr1/cdnr.json` and `gstr1/cdnra.json`.
+
+The differential also found a real bug on this side, since fixed: 53 amount
+fields rejected a third decimal place that the reference quietly rounds to two
+before checking — and the rounded value is what reaches the payload, so this
+affected output, not just validation. Those fields now carry `round_to`.
+
+Running it needs the official tool, so it is not part of `cargo test`:
+
+```sh
+cargo build -p gst-cli
+uv run scripts/validation_differential.py --app-dir <tool>/app
+```
+
 ## Layout
 
 - `masters/` — shared fact tables: state codes, tax rate slabs, invoice

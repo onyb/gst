@@ -116,7 +116,8 @@
       "type": "decimal",
       "required": true,
       "pattern": "^(\\d{0,13})(\\.\\d{0,2})?$",
-      "description": "Corrected total value of the note including tax. Non-negative."
+      "description": "Corrected total value of the note including tax. Non-negative.",
+      "round_to": 2
     },
     {
       "id": "diff_percent",
@@ -155,7 +156,8 @@
           "description": "Must be strictly positive \u2014 a zero taxable value is rejected."
         }
       ],
-      "description": "Corrected taxable value at this rate, excluding tax. Strictly positive."
+      "description": "Corrected taxable value at this rate, excluding tax. Strictly positive.",
+      "round_to": 2
     },
     {
       "id": "csamt",
@@ -165,7 +167,8 @@
       "required": false,
       "default": 0,
       "pattern": "^(\\d{0,11})(\\.\\d{0,2})?$",
-      "description": "Corrected cess on this line. Blank is treated as 0."
+      "description": "Corrected cess on this line. Blank is treated as 0.",
+      "round_to": 2
     }
   ],
   "rules": [

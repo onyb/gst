@@ -44,7 +44,8 @@
       "required": false,
       "default": 0,
       "pattern": "^-?(\\d{0,11})(\\.\\d{0,2})?$",
-      "description": "Total nil-rated supplies in this category. Blank is treated as 0."
+      "description": "Total nil-rated supplies in this category. Blank is treated as 0.",
+      "round_to": 2
     },
     {
       "id": "expt_amt",
@@ -54,7 +55,8 @@
       "required": false,
       "default": 0,
       "pattern": "^-?(\\d{0,11})(\\.\\d{0,2})?$",
-      "description": "Total exempted supplies in this category, excluding nil-rated and non-GST. Blank is treated as 0. Note the column header has no space before the bracket and writes 'non GST' unhyphenated \u2014 it must be reproduced exactly."
+      "description": "Total exempted supplies in this category, excluding nil-rated and non-GST. Blank is treated as 0. Note the column header has no space before the bracket and writes 'non GST' unhyphenated \u2014 it must be reproduced exactly.",
+      "round_to": 2
     },
     {
       "id": "ngsup_amt",
@@ -64,7 +66,8 @@
       "required": false,
       "default": 0,
       "pattern": "^-?(\\d{0,11})(\\.\\d{0,2})?$",
-      "description": "Total non-GST supplies in this category. Blank is treated as 0."
+      "description": "Total non-GST supplies in this category. Blank is treated as 0.",
+      "round_to": 2
     }
   ],
   "rules": [],

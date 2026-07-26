@@ -63,7 +63,8 @@
       "type": "decimal",
       "required": true,
       "pattern": "^-?(\\d{0,11})(\\.\\d{0,2})?$",
-      "description": "Gross advance received in this period at this rate. May be negative, and must not be zero."
+      "description": "Gross advance received in this period at this rate. May be negative, and must not be zero.",
+      "round_to": 2
     },
     {
       "id": "csamt",
@@ -73,7 +74,8 @@
       "required": false,
       "pattern": "^-?(\\d{0,11})(\\.\\d{0,2})?$",
       "default": 0,
-      "description": "Cess on this line. The reference writes 0 into a blank cell before mapping it, so a blank is emitted as 0."
+      "description": "Cess on this line. The reference writes 0 into a blank cell before mapping it, so a blank is emitted as 0.",
+      "round_to": 2
     }
   ],
   "rules": [

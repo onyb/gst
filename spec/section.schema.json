@@ -231,6 +231,11 @@
           "description": "Inline allowed values, when too small or too section-specific for a masters file.",
           "type": "array"
         },
+        "round_to": {
+          "description": "Decimal places this amount is rounded to BEFORE its pattern is checked, mirroring the reference's cnvt2Nm(). Set it on exactly those fields the reference wraps in that conversion: a value with more places is accepted and rounded rather than rejected, and the rounded value is what reaches the payload.",
+          "type": "integer",
+          "minimum": 0
+        },
         "max_length": { "type": "integer", "minimum": 1 },
         "constraints": {
           "description": "Named field-level checks beyond pattern/enum, implemented by the engine. A bare string names a check that takes no parameters; the object form carries a parameter and/or limits the check to a range of return periods, so period-dependent rules keep their numbers in the spec rather than in code.",

@@ -66,7 +66,8 @@
       "type": "decimal",
       "required": true,
       "pattern": "^(\\d{0,13})(\\.\\d{0,2})?$",
-      "description": "Total invoice value. Non-negative."
+      "description": "Total invoice value. Non-negative.",
+      "round_to": 2
     },
     {
       "id": "sbpcode",
@@ -115,7 +116,8 @@
       "type": "decimal",
       "required": true,
       "pattern": "^(\\d{0,11})(\\.\\d{0,2})?$",
-      "description": "Taxable value at this rate, excluding tax."
+      "description": "Taxable value at this rate, excluding tax.",
+      "round_to": 2
     },
     {
       "id": "csamt",
@@ -125,7 +127,8 @@
       "required": false,
       "default": 0,
       "pattern": "^(\\d{0,11})(\\.\\d{0,2})?$",
-      "description": "Cess on this line. Blank is treated as 0, and forced to 0 for WOPAY."
+      "description": "Cess on this line. Blank is treated as 0, and forced to 0 for WOPAY.",
+      "round_to": 2
     }
   ],
   "rules": [
@@ -301,6 +304,13 @@
       "text": "Shipping Bill Number is digits only, three to seven of them, so it is emitted as a string but constrained like a number. The reference compares it both as a string and via parseInt when matching rows, which papers over any leading-zero difference.",
       "affects": [
         "sbnum"
+      ]
+    },
+    {
+      "kind": "divergence",
+      "text": "Cess Amount is not validated at all in this section \u2014 the reference's field checks for exports cover the export type, invoice details, port, shipping bill, rate and taxable value, but never the cess. A negative cess is therefore accepted and reaches the payload as a negative csamt. This implementation applies the unsigned amount pattern instead, since a negative cess on an export is not a thing the portal should be asked to accept. Confirmed by differential test against the tool.",
+      "affects": [
+        "csamt"
       ]
     }
   ]

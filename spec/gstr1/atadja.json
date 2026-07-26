@@ -90,7 +90,8 @@
       "type": "decimal",
       "required": false,
       "pattern": "^(\\d{0,11})(\\.\\d{0,2})?$",
-      "description": "Cess on this line. A blank produces no csamt key at all \u2014 the reference has no empty-cell guard here, so a blank becomes NaN and omit-empty drops it. See the quirk note."
+      "description": "Cess on this line. A blank produces no csamt key at all \u2014 the reference has no empty-cell guard here, so a blank becomes NaN and omit-empty drops it. See the quirk note.",
+      "round_to": 2
     }
   ],
   "rules": [],
