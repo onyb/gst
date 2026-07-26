@@ -1,0 +1,6 @@
+Type,Place Of Supply,Rate,Applicable % of Tax Rate,Taxable Value,Cess Amount,E-Commerce GSTIN
+OE,27-Maharashtra,18,,500000,,
+OE,37-Andhra Pradesh,18,,300000,,
+OE,37-Andhra Pradesh,5,,120000,2500,
+OE,29-Karnataka,12,65,200000,,
+OE,32-Kerala,18,,-75000,,

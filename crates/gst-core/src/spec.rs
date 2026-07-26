@@ -504,6 +504,7 @@ embedded_section!(GSTR1_B2B, "gstr1/b2b.json");
 embedded_section!(GSTR1_B2BA, "gstr1/b2ba.json");
 embedded_section!(GSTR1_B2CL, "gstr1/b2cl.json");
 embedded_section!(GSTR1_B2CLA, "gstr1/b2cla.json");
+embedded_section!(GSTR1_B2CS, "gstr1/b2cs.json");
 
 /// Every section the engine knows, in the order a return reports them.
 pub fn sections() -> Vec<&'static SectionSpec> {
@@ -512,6 +513,7 @@ pub fn sections() -> Vec<&'static SectionSpec> {
         &GSTR1_B2BA,
         &GSTR1_B2CL,
         &GSTR1_B2CLA,
+        &GSTR1_B2CS,
     ]
 }
 
@@ -713,7 +715,7 @@ mod tests {
         assert!(section("b2b").is_some());
         assert!(section("b2ba").is_some());
         assert!(section("cdnr").is_none());
-        assert_eq!(section_codes(), ["b2b", "b2ba", "b2cl", "b2cla"]);
+        assert_eq!(section_codes(), ["b2b", "b2ba", "b2cl", "b2cla", "b2cs"]);
     }
 
     #[test]
