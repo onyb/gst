@@ -52,25 +52,6 @@ split yet.
 
 Everything runs locally. The tool makes no network calls.
 
-## Extract from invoice PDFs (Sarvam AI)
-
-An optional companion script skips step 1: point it at invoice PDFs and it
-produces the section CSV for you, using [Sarvam AI](https://docs.sarvam.ai) —
-Document Digitization (Sarvam Vision) to read the PDF, then a `sarvam-105b`
-chat completion to structure rows against the same section specs the
-validator uses.
-
-```sh
-export SARVAM_API_KEY=...   # from dashboard.sarvam.ai
-uv run scripts/sarvam_extract.py fixtures/invoices/inv-007.pdf --section b2b -o b2b.csv
-gst validate b2b.csv --section b2b --gstin 27AAPFU0939F1ZV --period 072017
-```
-
-This is strictly additive: the `gst` CLI itself is unchanged and still makes
-no network calls. Extracted rows go through the exact same validate/generate
-pipeline, so anything the model mis-reads is caught before it reaches the
-portal. A sample invoice PDF lives at `fixtures/invoices/inv-007.pdf`.
-
 ## Install
 
 ```sh
