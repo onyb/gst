@@ -13,7 +13,16 @@ Windows-only `.exe`. We reverse-engineered that binary and distilled
 everything it knows (templates, validation rules, payload shapes, error
 formats) into a machine-readable spec in [`spec/`](spec/). The Rust core and
 CLI in this repo are then written purely against that spec, never against the
-tool itself, and their output is verified against the official tool's.
+tool itself.
+
+**The output is byte-identical to the official tool's.**
+[`fixtures/golden/`](fixtures/golden/) holds a file captured by running GSTN's
+own tool, and a test asserts we reproduce it byte for byte — same 13 sections,
+same key order, same filename. That comparison is what turns "we read their
+code carefully" into something checkable, and it earned its keep immediately:
+the first run of it corrected four things the source alone had told us wrong,
+including that empty sections are omitted rather than emitted as `[]`, and that
+the recipient's name is stripped before upload.
 
 So the spec is the product as much as the CLI: an independent, testable
 description of the GST return formats that anyone can build on.
@@ -23,10 +32,15 @@ description of the GST return formats that anyone can build on.
 1. Fill the Excel workbook as usual
 2. `gst validate workbook.xlsx` reports errors with sheet/row/column
    references; fix them in Excel
-3. `gst generate workbook.xlsx` writes portal-ready upload JSON, chunked
-   under the portal's 5 MB cap
+3. `gst upload workbook.xlsx` reads every section from the one workbook and
+   writes the complete portal upload file, named exactly as the official tool
+   names it
 4. Upload on gst.gov.in (Returns Dashboard, Prepare Offline), then review
    and file as usual
+
+Use `gst generate --section <name>` instead when you want a single section's
+payload on its own. Returns above the tool's 4.7 MiB chunk threshold are not
+split yet.
 
 Everything runs locally. The tool makes no network calls.
 
@@ -63,9 +77,14 @@ Work in progress. The MVP targets GSTR-1 and GSTR-3B. 13 of the 30 GSTR-1
 worksheets are implemented, including both tables every filer must submit
 (HSN summary and documents issued).
 
-Output is structurally complete but **not yet verified against GSTN's own
-tool** — there is no differential test against a captured reference file, so
-treat generated JSON as ready to inspect rather than proven to upload.
+Output is **verified byte-for-byte against GSTN's own tool** for a 13-section
+return — see [`fixtures/golden/`](fixtures/golden/) and
+`crates/gst-core/tests/golden_reference.rs`.
+
+Two honest bounds on that claim: the comparison covers one captured period with
+these 13 sections, so a section added later is unverified until a new file is
+captured; and matching the official tool is not the same as the portal
+accepting the upload, which we have not tested.
 
 | GSTR-1 section | Sheets | Status |
 |---|---|---|
