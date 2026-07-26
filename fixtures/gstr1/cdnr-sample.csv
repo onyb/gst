@@ -1,0 +1,5 @@
+GSTIN/UIN of Recipient,Receiver Name,Note Number,Note Date,Note Type,Place Of Supply,Reverse Charge,Note Supply Type,Note Value,Applicable % of Tax Rate,Rate,Taxable Value,Cess Amount
+12GEOPS0823BBZH,Acme Traders,CN-001,14-Jul-17,C,37-Andhra Pradesh,N,Regular B2B,59000,,18,50000,
+12GEOPS0823BBZH,Acme Traders,CN-002,15-Jul-17,D,27-Maharashtra,N,Regular B2B,"1,18,000",,18,100000,
+29AAGCB7383J1Z4,Bharat Supplies,CN-003,20-Jul-17,C,29-Karnataka,N,Deemed Exp,24100,,18,20000,500
+29AAGCB7383J1Z4,Bharat Supplies,CN-003,20-Jul-17,C,29-Karnataka,N,Deemed Exp,24100,,5,10000,
