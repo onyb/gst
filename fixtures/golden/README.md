@@ -98,3 +98,54 @@ From a third capture, of a workbook with only one HSN half populated:
   and flagged as unverified in the envelope spec, because the earlier captures
   happened to populate both halves. This implementation already behaved this
   way, and the one-sided file is byte-identical too.
+
+## The e-commerce sections, captured ahead of implementation
+
+`gstr1-eco-062025-reference.json` is the tool's upload output for
+`fixtures/gstr1/eco-workbook.xlsx`, a workbook exercising all ten ECO sheets at
+once. Those sheets are not implemented yet; this file was captured first so the
+target shapes are ground truth rather than another reading of the source, and so
+the eventual implementation has something to be checked against on day one.
+
+Ten sheets map into four payload objects, and the shapes are less uniform than
+anywhere else in the return:
+
+| Sheet | Payload | Shape |
+|---|---|---|
+| `eco` | `supeco.clttx` / `supeco.paytx` | flat records; ONE sheet routed into TWO members by Nature of Supply |
+| `ecoa` | `supecoa.clttxa` / `supecoa.paytxa` | as above, plus `omon` and `oetin` |
+| `ecob2b` | `ecom.b2b` | envelope by supplier+recipient → invoices → `itm_det` items |
+| `ecourp2b` | `ecom.urp2b` | as b2b but no supplier (the supplier is unregistered) |
+| `ecob2c` | `ecom.b2c` | FLAT, one record per row |
+| `ecourp2c` | `ecom.urp2c` | flat, and no supplier |
+| `ecoab2b` | `ecoma.b2ba` | b2b plus `oinum`/`oidt` |
+| `ecoab2c` | `ecoma.b2ca` | envelope by place of supply → `posItms` → items — a nesting level nothing else uses |
+| `ecoaurp2b` | `ecoma.urp2ba` | urp2b plus `oinum`/`oidt` |
+| `ecoaurp2c` | `ecoma.urp2ca` | envelope by place of supply → items directly |
+
+Four things the capture settled that the source would not have:
+
+- **`flag: "N"` is emitted on every ECO record**, in all eight `ecom`/`ecoma`
+  members. No other section carries it, and the workbook has no column for it.
+- **`b2c` and `urp2c` emit `camt`, `samt` AND `iamt` together** — `camt: 0`,
+  `samt: 0`, `iamt: 9000` on an inter-state row. Every other section in the
+  return emits either the integrated tax or the central/state pair, never both.
+- **`cname`, `sname` and `receipientName` are all stripped** on the way out,
+  extending the recipient-name stripping already known for B2B and CDNR.
+- Key order is not consistent between siblings: `sply_ty` leads the record in
+  `b2ba` and trails it in `urp2ba`. Byte-identity requires reproducing each
+  section's own order rather than a family-wide one.
+
+Two reference defects surfaced while producing a workbook the tool would accept,
+both of which will bite filers:
+
+1. **A blank Cess Amount is reported as a missing header column.** These
+   sections check `hasOwnProperty` per ROW rather than against the header row,
+   and the spreadsheet reader omits blank cells — so an empty cess reads as an
+   absent column. The row is rejected and the error names the wrong problem.
+   Every ECO row must carry an explicit `0`.
+2. **A supplier GSTIN equal to the filer's own silently drops the row.** No
+   error list mentions it, no error is shown, and the record simply never
+   reaches the payload. This is the quietest data loss found anywhere in the
+   tool so far — the first probe workbook lost three of ten sections to it with
+   a completely clean import report.
