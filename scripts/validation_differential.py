@@ -47,30 +47,38 @@ from pathlib import Path
 import openpyxl
 import requests
 
+from _spec import SPEC_DIR, load_specs
+
 REPO = Path(__file__).resolve().parent.parent
-MONTHS = [
-    ("April", 4), ("May", 5), ("June", 6), ("July", 7), ("August", 8),
-    ("September", 9), ("October", 10), ("November", 11), ("December", 12),
-    ("January", 1), ("February", 2), ("March", 3),
-]
+ENVELOPE = json.loads((SPEC_DIR / "upload-envelope.json").read_text())
+FINANCIAL_YEARS = json.loads((REPO / "spec/masters/financial-years.json").read_text())["years"]
+# months.json lists calendar months January-first; rotate to the April-first
+# financial-year ordering the tool's UI uses.
+_MONTH_NAMES = json.loads((REPO / "spec/masters/months.json").read_text())["names"]
+MONTHS = [(name, i + 1) for i, name in enumerate(_MONTH_NAMES)]
+MONTHS = MONTHS[3:] + MONTHS[:3]
 
 
 def share_data(gstin: str, period: str, fy: str) -> dict:
     """The context blob `/addtblfile` expects, reconstructed from the UI's."""
     years = []
-    for start in range(2017, 2028):
+    for fy_label in FINANCIAL_YEARS:
+        # April rollover: January-March belong to the FY's second calendar
+        # year. crates/gst-core/src/date.rs `period_from_financial_year` is
+        # the Rust counterpart of this rule.
+        start = int(fy_label[:4])
         months = [
-            {"month": name.upper(), "value": f"{m:02d}{start if m >= 4 else start + 1}"}
+            {"month": name, "value": f"{m:02d}{start if m >= 4 else start + 1}"}
             for name, m in MONTHS
         ]
-        years.append({"year": f"{start}-{str(start + 1)[2:]}", "months": months})
+        years.append({"year": fy_label, "months": months})
     current = next(y for y in years if y["year"] == fy)["months"]
     month_name = next(n for n, m in MONTHS if m == int(period[:2]))
     return {
         "dashBoardDt": {"form": "GSTR1", "gstin": gstin, "fp": period},
         "yearsList": years,
         "curFyMonths": current,
-        "monthSelected": {"month": month_name.upper(), "value": period},
+        "monthSelected": {"month": month_name, "value": period},
         "yearSelected": {"year": fy, "months": current},
         "isSezTaxpayer": False,
         "isUploadImport": False,
@@ -116,21 +124,16 @@ def violations(field: dict) -> list[tuple[str, str]]:
     return out
 
 
-def load_specs() -> dict[str, dict]:
-    specs = {}
-    for path in sorted((REPO / "spec" / "gstr1").glob("*.json")):
-        spec = json.loads(path.read_text())
-        if "section" in spec and "fields" in spec:
-            specs[spec["section"]] = spec
-    return specs
-
-
-def base_rows(workbook: Path) -> dict[str, dict]:
+def base_rows(workbook: Path, specs: dict[str, dict]) -> dict[str, dict]:
+    excel = {s["source"]["excel"]["sheet"]: s["source"]["excel"] for s in specs.values()}
     wb = openpyxl.load_workbook(workbook)
     out = {}
     for ws in wb.worksheets:
-        header = [c.value for c in ws[4] if c.value is not None]
-        row = [c.value for c in ws[5]][: len(header)]
+        src = excel.get(ws.title)
+        if src is None:
+            continue
+        header = [c.value for c in ws[src["header_row"]] if c.value is not None]
+        row = [c.value for c in ws[src["first_data_row"]]][: len(header)]
         out[ws.title] = {
             "header": header,
             "row": ["" if v is None else v for v in row],
@@ -141,13 +144,18 @@ def base_rows(workbook: Path) -> dict[str, dict]:
 def build_cases(specs: dict[str, dict], bases: dict[str, dict]) -> list[dict]:
     cases = []
     for section, spec in specs.items():
-        sheet = spec["source"]["excel"]["sheet"]
+        excel = spec["source"]["excel"]
+        sheet = excel["sheet"]
         if sheet not in bases:
             continue
         header, row = bases[sheet]["header"], bases[sheet]["row"]
+        layout = {
+            "sheet": sheet, "header_row": excel["header_row"],
+            "first_data_row": excel["first_data_row"],
+        }
         cases.append({
-            "section": section, "sheet": sheet, "case": "control", "field": None,
-            "value": None, "header": header, "row": row,
+            "section": section, "case": "control", "field": None,
+            "value": None, "header": header, "row": row, **layout,
         })
         for field in spec["fields"]:
             if field["column"] not in header:
@@ -156,11 +164,46 @@ def build_cases(specs: dict[str, dict], bases: dict[str, dict]) -> list[dict]:
                 mutated = list(row)
                 mutated[header.index(field["column"])] = value
                 cases.append({
-                    "section": section, "sheet": sheet,
+                    "section": section,
                     "case": f"{field['id']}.{label}", "field": field["id"],
-                    "value": value, "header": header, "row": mutated,
+                    "value": value, "header": header, "row": mutated, **layout,
                 })
     return cases
+
+
+def record_paths(envelope: dict) -> dict[str, tuple[list, list]]:
+    """Where each section's records sit inside the tool's working file,
+    derived from the upload-envelope spec's `keys`: section code ->
+    (paths, fallback paths), each path a list of JSON keys. Sections not
+    mapped here are the plain `section:` keys — a bare array under their
+    own top-level key."""
+    paths: dict[str, tuple[list, list]] = {}
+
+    def add(section: str, path: list[str], fallback: bool = False) -> None:
+        entry = paths.setdefault(section, ([], []))
+        entry[1 if fallback else 0].append(path)
+
+    for entry in envelope["keys"]:
+        src = entry.get("from", "")
+        if src.startswith("wrapped:"):
+            add(src.removeprefix("wrapped:"), [entry["key"], entry["wrapper"]])
+        elif src == "object":
+            for member in entry["members"]:
+                add(member["from"].removeprefix("section:"), [entry["key"], member["key"]])
+    for member in envelope["hsn_from_bifurcation"]["members"]:
+        section = member["from"].removeprefix("section:")
+        add(section, ["hsn", member["key"]])
+        add(section, ["hsn", envelope["hsn_before_bifurcation"]["wrapper"]], fallback=True)
+    return paths
+
+
+RECORD_PATHS = record_paths(ENVELOPE)
+
+
+def dig(work: dict, path: list[str]) -> list:
+    for key in path:
+        work = work.get(key, {}) if isinstance(work, dict) else {}
+    return work if isinstance(work, list) else []
 
 
 class Tool:
@@ -174,15 +217,11 @@ class Tool:
         self.share = json.dumps(share_data(gstin, period, fy))
 
     def records(self, work: dict, section: str) -> int:
-        if section == "nil":
-            return len(work.get("nil", {}).get("inv", []))
-        if section == "doc_issue":
-            return len(work.get("doc_issue", {}).get("doc_det", []))
-        if section in ("hsn(b2b)", "hsn(b2c)"):
-            hsn = work.get("hsn", {})
-            member = "hsn_b2b" if section == "hsn(b2b)" else "hsn_b2c"
-            return len(hsn.get(member, []) or hsn.get("data", []))
-        return len(work.get(section, []) or [])
+        primary, fallback = RECORD_PATHS.get(section, ([[section]], []))
+        count = sum(len(dig(work, path)) for path in primary)
+        if count == 0 and fallback:
+            count = sum(len(dig(work, path)) for path in fallback)
+        return count
 
     def verdict(self, workbook: Path, section: str) -> tuple[str, str]:
         """'accept', 'reject', or 'crash' — the tool has unhandled paths that
@@ -235,10 +274,10 @@ def write_case(case: dict, path: Path) -> None:
     ws.title = case["sheet"]
     ws.cell(1, 1, f"Summary for {case['sheet']}")
     for i, head in enumerate(case["header"], 1):
-        ws.cell(4, i, head)
+        ws.cell(case["header_row"], i, head)
     for i, value in enumerate(case["row"], 1):
         if value != "":
-            ws.cell(5, i, value)
+            ws.cell(case["first_data_row"], i, value)
     wb.save(path)
 
 
@@ -265,7 +304,8 @@ def main() -> int:
     except requests.RequestException:
         sys.exit(f"no offline tool on port {args.port} — start it with `node app.js`")
 
-    cases = build_cases(load_specs(), base_rows(args.workbook))
+    specs = load_specs()
+    cases = build_cases(specs, base_rows(args.workbook, specs))
     tool = Tool(args.app_dir, args.gstin, args.period, args.fy, args.month, args.port)
     scratch = Path(args.out).parent if args.out else REPO
     workbook = scratch / ".differential-case.xlsx"

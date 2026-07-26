@@ -35,7 +35,8 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+from _spec import load_spec, sorted_fields
+
 DEFAULT_MODEL = "sarvam-105b"
 DIGITIZE_TIMEOUT_SECS = 600
 
@@ -64,21 +65,8 @@ Value conventions (follow exactly):
 """
 
 
-def load_spec(section: str) -> dict:
-    path = REPO_ROOT / "spec" / "gstr1" / f"{section}.json"
-    spec = json.loads(path.read_text()) if path.exists() else {}
-    if "fields" not in spec:  # missing, or a non-row spec like upload-envelope
-        known = sorted(
-            p.stem
-            for p in (REPO_ROOT / "spec" / "gstr1").glob("*.json")
-            if "fields" in json.loads(p.read_text())
-        )
-        sys.exit(f"error: unknown section '{section}' (have: {', '.join(known)})")
-    return spec
-
-
 def spec_columns(spec: dict) -> list[str]:
-    return [f["column"] for f in sorted(spec["fields"], key=lambda f: f["order"])]
+    return [f["column"] for f in sorted_fields(spec)]
 
 
 def build_system_prompt(spec: dict) -> str:
@@ -89,7 +77,7 @@ def build_system_prompt(spec: dict) -> str:
         "",
         "Columns (name | type | required | meaning):",
     ]
-    for f in sorted(spec["fields"], key=lambda f: f["order"]):
+    for f in sorted_fields(spec):
         req = "required" if f.get("required") else "optional"
         desc = f.get("description", "")
         lines.append(f"- {f['column']} | {f['type']} | {req} | {desc}")
