@@ -98,39 +98,32 @@ struct DocumentTypesFile {
     types: Vec<String>,
 }
 
-fn embedded<T: serde::de::DeserializeOwned>(name: &str, json: &str) -> T {
+/// Parse an embedded JSON document, panicking with its name when invalid —
+/// the shared load-or-die for everything compiled in from `spec/`.
+pub(crate) fn embedded<T: serde::de::DeserializeOwned>(name: &str, json: &str) -> T {
     serde_json::from_str(json).unwrap_or_else(|e| panic!("embedded spec {name} is invalid: {e}"))
 }
 
-pub static STATES: LazyLock<Vec<State>> = LazyLock::new(|| {
-    embedded::<StatesFile>(
-        "state-codes.json",
-        include_str!("../../../spec/masters/state-codes.json"),
-    )
-    .states
-});
+/// Parse a master file out of [`MASTER_FILES`], the single registry of
+/// embedded masters.
+fn master<T: serde::de::DeserializeOwned>(name: &str) -> T {
+    let json = MASTER_FILES
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, json)| *json)
+        .unwrap_or_else(|| panic!("`{name}` is not in MASTER_FILES"));
+    embedded(name, json)
+}
 
-pub static TAX_RATES: LazyLock<TaxRates> = LazyLock::new(|| {
-    embedded(
-        "tax-rates.json",
-        include_str!("../../../spec/masters/tax-rates.json"),
-    )
-});
+pub static STATES: LazyLock<Vec<State>> =
+    LazyLock::new(|| master::<StatesFile>("state-codes.json").states);
 
-pub static INVOICE_TYPES: LazyLock<InvoiceTypes> = LazyLock::new(|| {
-    embedded(
-        "invoice-types.json",
-        include_str!("../../../spec/masters/invoice-types.json"),
-    )
-});
+pub static TAX_RATES: LazyLock<TaxRates> = LazyLock::new(|| master("tax-rates.json"));
 
-pub static NOTE_REASONS: LazyLock<Vec<Code>> = LazyLock::new(|| {
-    embedded::<ReasonsFile>(
-        "note-reasons.json",
-        include_str!("../../../spec/masters/note-reasons.json"),
-    )
-    .reasons
-});
+pub static INVOICE_TYPES: LazyLock<InvoiceTypes> = LazyLock::new(|| master("invoice-types.json"));
+
+pub static NOTE_REASONS: LazyLock<Vec<Code>> =
+    LazyLock::new(|| master::<ReasonsFile>("note-reasons.json").reasons);
 
 /// An HSN or SAC code and its official description.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -150,14 +143,11 @@ struct HsnFile {
 
 /// HSN/SAC codes indexed by code, for the exact-match lookup the reference does.
 pub static HSN_CODES: LazyLock<std::collections::HashMap<String, String>> = LazyLock::new(|| {
-    embedded::<HsnFile>(
-        "hsn-codes.json",
-        include_str!("../../../spec/masters/hsn-codes.json"),
-    )
-    .codes
-    .into_iter()
-    .map(|c| (c.code, c.description))
-    .collect()
+    master::<HsnFile>("hsn-codes.json")
+        .codes
+        .into_iter()
+        .map(|c| (c.code, c.description))
+        .collect()
 });
 
 /// The official description for an HSN code, by exact match.
@@ -175,16 +165,6 @@ pub fn hsn_description(code: &str) -> Option<&'static str> {
         .filter(|d| !d.is_empty())
 }
 
-/// Unit quantity labels, as 'CODE-DESCRIPTION'.
-pub static UQC_LABELS: LazyLock<Vec<String>> = LazyLock::new(|| {
-    embedded::<UqcFile>("uqc.json", include_str!("../../../spec/masters/uqc.json")).labels
-});
-
-#[derive(Deserialize)]
-struct UqcFile {
-    labels: Vec<String>,
-}
-
 /// The code a unit-quantity label carries before its hyphen: 'KGS-KILOGRAMS'
 /// becomes 'KGS'. A label with no hyphen, such as 'NA', passes through whole.
 pub fn uqc_code(label: &str) -> String {
@@ -196,22 +176,12 @@ pub fn uqc_code(label: &str) -> String {
 }
 
 /// Categories of the nil-rated / exempted / non-GST table.
-pub static NIL_SUPPLY_TYPES: LazyLock<Vec<NilSupplyType>> = LazyLock::new(|| {
-    embedded::<NilSupplyTypesFile>(
-        "nil-supply-types.json",
-        include_str!("../../../spec/masters/nil-supply-types.json"),
-    )
-    .types
-});
+pub static NIL_SUPPLY_TYPES: LazyLock<Vec<NilSupplyType>> =
+    LazyLock::new(|| master::<NilSupplyTypesFile>("nil-supply-types.json").types);
 
 /// Natures of document, in the order that defines their payload numbering.
-pub static DOCUMENT_TYPES: LazyLock<Vec<String>> = LazyLock::new(|| {
-    embedded::<DocumentTypesFile>(
-        "document-types.json",
-        include_str!("../../../spec/masters/document-types.json"),
-    )
-    .types
-});
+pub static DOCUMENT_TYPES: LazyLock<Vec<String>> =
+    LazyLock::new(|| master::<DocumentTypesFile>("document-types.json").types);
 
 /// Look up a state by its two-digit code.
 pub fn state_by_code(code: &str) -> Option<&'static State> {
@@ -246,6 +216,10 @@ const MASTER_FILES: &[(&str, &str)] = &[
         include_str!("../../../spec/masters/nil-supply-types.json"),
     ),
     (
+        "hsn-codes.json",
+        include_str!("../../../spec/masters/hsn-codes.json"),
+    ),
+    (
         "months.json",
         include_str!("../../../spec/masters/months.json"),
     ),
@@ -255,14 +229,28 @@ const MASTER_FILES: &[(&str, &str)] = &[
     ),
 ];
 
-/// Resolve a field's `enum_ref` to the values a cell may hold.
-///
+/// Resolve a field's `enum_ref` to the values a cell may hold, memoized per
+/// distinct reference — the specs point at a handful of masters and
+/// validation asks once per cell.
+pub fn resolve_enum_ref(reference: &str) -> Result<std::sync::Arc<Vec<SpecValue>>, String> {
+    static RESOLVED: LazyLock<
+        std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<Vec<SpecValue>>>>,
+    > = LazyLock::new(Default::default);
+    let mut cache = RESOLVED.lock().expect("enum_ref cache is not poisoned");
+    if let Some(values) = cache.get(reference) {
+        return Ok(values.clone());
+    }
+    let values = std::sync::Arc::new(resolve_enum_ref_uncached(reference)?);
+    cache.insert(reference.to_owned(), values.clone());
+    Ok(values)
+}
+
 /// A ref looks like `../masters/state-codes.json#/states`. Scalar arrays are
 /// taken as-is. Arrays of objects yield the value a workbook actually
 /// contains, preferring `import_label` (what the import path matches) over
 /// `code`, then `name` — so referencing `invoice-types.json#/table4` gives the
 /// import labels, not the codes or the labels the tool's own UI displays.
-pub fn resolve_enum_ref(reference: &str) -> Result<Vec<SpecValue>, String> {
+fn resolve_enum_ref_uncached(reference: &str) -> Result<Vec<SpecValue>, String> {
     let (path, pointer) = reference
         .split_once('#')
         .ok_or_else(|| format!("enum_ref `{reference}` has no JSON pointer"))?;

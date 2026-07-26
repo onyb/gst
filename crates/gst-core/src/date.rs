@@ -58,6 +58,11 @@ impl ReturnPeriod {
         self.year as u32 * 100 + self.month
     }
 
+    /// The period as `MMYYYY`, the form the portal and the upload payload use.
+    pub fn as_mmyyyy(&self) -> String {
+        format!("{:02}{:04}", self.month, self.year)
+    }
+
     /// Last day of the period — the latest date any document may carry.
     pub fn last_day(&self) -> NaiveDate {
         let (next_month, next_year) = if self.month == 12 {
@@ -173,7 +178,7 @@ pub fn period_from_financial_year(fy: &str, month_name: &str) -> Option<String> 
     } else {
         start_year + 1
     };
-    Some(format!("{month:02}{year:04}"))
+    Some(ReturnPeriod { month, year }.as_mmyyyy())
 }
 
 /// Render as `DD-MM-YYYY`, the form the upload payload carries.

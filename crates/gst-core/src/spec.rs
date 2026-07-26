@@ -101,12 +101,7 @@ impl Constraint {
 
 /// `MMYYYY` (as spec files and the portal write it) to comparable `YYYYMM`.
 pub fn period_as_yyyymm(text: &str) -> Option<u32> {
-    if text.len() != 6 || !text.chars().all(|c| c.is_ascii_digit()) {
-        return None;
-    }
-    let month: u32 = text[..2].parse().ok()?;
-    let year: u32 = text[2..].parse().ok()?;
-    (1..=12).contains(&month).then_some(year * 100 + month)
+    crate::date::ReturnPeriod::parse(text).map(|p| p.as_yyyymm())
 }
 
 /// Wire form: a bare string names a parameterless check; the object form
@@ -542,90 +537,67 @@ impl SectionSpec {
     }
 }
 
-macro_rules! embedded_section {
-    ($name:ident, $file:literal) => {
-        pub static $name: LazyLock<SectionSpec> = LazyLock::new(|| {
-            serde_json::from_str(include_str!(concat!("../../../spec/", $file)))
-                .unwrap_or_else(|e| panic!("embedded spec {} is invalid: {e}", $file))
-        });
+/// One list declares the registry: each entry emits its static, and the same
+/// entries populate `sections()` in declaration order, so a section cannot be
+/// embedded yet missing from the lookup.
+macro_rules! sections {
+    ($($name:ident => $file:literal),+ $(,)?) => {
+        $(
+            pub static $name: LazyLock<SectionSpec> = LazyLock::new(|| {
+                crate::masters::embedded($file, include_str!(concat!("../../../spec/", $file)))
+            });
+        )+
+
+        /// Every section the engine knows, in the order a return reports them.
+        pub fn sections() -> &'static [&'static SectionSpec] {
+            static ALL: LazyLock<Vec<&'static SectionSpec>> =
+                LazyLock::new(|| vec![$(&$name),+]);
+            &ALL
+        }
     };
 }
 
-embedded_section!(GSTR1_B2B, "gstr1/b2b.json");
-embedded_section!(GSTR1_B2BA, "gstr1/b2ba.json");
-embedded_section!(GSTR1_B2CL, "gstr1/b2cl.json");
-embedded_section!(GSTR1_B2CLA, "gstr1/b2cla.json");
-embedded_section!(GSTR1_B2CS, "gstr1/b2cs.json");
-embedded_section!(GSTR1_B2CSA, "gstr1/b2csa.json");
-embedded_section!(GSTR1_CDNR, "gstr1/cdnr.json");
-embedded_section!(GSTR1_CDNRA, "gstr1/cdnra.json");
-embedded_section!(GSTR1_CDNUR, "gstr1/cdnur.json");
-embedded_section!(GSTR1_CDNURA, "gstr1/cdnura.json");
-embedded_section!(GSTR1_EXP, "gstr1/exp.json");
-embedded_section!(GSTR1_EXPA, "gstr1/expa.json");
-embedded_section!(GSTR1_AT, "gstr1/at.json");
-embedded_section!(GSTR1_ATA, "gstr1/ata.json");
-embedded_section!(GSTR1_ATADJ, "gstr1/atadj.json");
-embedded_section!(GSTR1_ATADJA, "gstr1/atadja.json");
-embedded_section!(GSTR1_NIL, "gstr1/exemp.json");
-embedded_section!(GSTR1_SUPECO, "gstr1/eco.json");
-embedded_section!(GSTR1_SUPECOA, "gstr1/ecoa.json");
-embedded_section!(GSTR1_ECOM_B2B, "gstr1/ecob2b.json");
-embedded_section!(GSTR1_ECOM_B2C, "gstr1/ecob2c.json");
-embedded_section!(GSTR1_ECOM_URP2B, "gstr1/ecourp2b.json");
-embedded_section!(GSTR1_ECOM_URP2C, "gstr1/ecourp2c.json");
-embedded_section!(GSTR1_ECOMA_B2B, "gstr1/ecoab2b.json");
-embedded_section!(GSTR1_ECOMA_B2C, "gstr1/ecoab2c.json");
-embedded_section!(GSTR1_ECOMA_URP2B, "gstr1/ecoaurp2b.json");
-embedded_section!(GSTR1_ECOMA_URP2C, "gstr1/ecoaurp2c.json");
-embedded_section!(GSTR1_DOC_ISSUE, "gstr1/docs.json");
-embedded_section!(GSTR1_HSN_B2B, "gstr1/hsn-b2b.json");
-embedded_section!(GSTR1_HSN_B2C, "gstr1/hsn-b2c.json");
-
-/// Every section the engine knows, in the order a return reports them.
-pub fn sections() -> Vec<&'static SectionSpec> {
-    vec![
-        &GSTR1_B2B,
-        &GSTR1_B2BA,
-        &GSTR1_B2CL,
-        &GSTR1_B2CLA,
-        &GSTR1_B2CS,
-        &GSTR1_B2CSA,
-        &GSTR1_CDNR,
-        &GSTR1_CDNRA,
-        &GSTR1_CDNUR,
-        &GSTR1_CDNURA,
-        &GSTR1_EXP,
-        &GSTR1_EXPA,
-        &GSTR1_AT,
-        &GSTR1_ATA,
-        &GSTR1_ATADJ,
-        &GSTR1_ATADJA,
-        &GSTR1_NIL,
-        &GSTR1_SUPECO,
-        &GSTR1_SUPECOA,
-        &GSTR1_ECOM_B2B,
-        &GSTR1_ECOM_B2C,
-        &GSTR1_ECOM_URP2B,
-        &GSTR1_ECOM_URP2C,
-        &GSTR1_ECOMA_B2B,
-        &GSTR1_ECOMA_B2C,
-        &GSTR1_ECOMA_URP2B,
-        &GSTR1_ECOMA_URP2C,
-        &GSTR1_DOC_ISSUE,
-        &GSTR1_HSN_B2B,
-        &GSTR1_HSN_B2C,
-    ]
+sections! {
+    GSTR1_B2B => "gstr1/b2b.json",
+    GSTR1_B2BA => "gstr1/b2ba.json",
+    GSTR1_B2CL => "gstr1/b2cl.json",
+    GSTR1_B2CLA => "gstr1/b2cla.json",
+    GSTR1_B2CS => "gstr1/b2cs.json",
+    GSTR1_B2CSA => "gstr1/b2csa.json",
+    GSTR1_CDNR => "gstr1/cdnr.json",
+    GSTR1_CDNRA => "gstr1/cdnra.json",
+    GSTR1_CDNUR => "gstr1/cdnur.json",
+    GSTR1_CDNURA => "gstr1/cdnura.json",
+    GSTR1_EXP => "gstr1/exp.json",
+    GSTR1_EXPA => "gstr1/expa.json",
+    GSTR1_AT => "gstr1/at.json",
+    GSTR1_ATA => "gstr1/ata.json",
+    GSTR1_ATADJ => "gstr1/atadj.json",
+    GSTR1_ATADJA => "gstr1/atadja.json",
+    GSTR1_NIL => "gstr1/exemp.json",
+    GSTR1_SUPECO => "gstr1/eco.json",
+    GSTR1_SUPECOA => "gstr1/ecoa.json",
+    GSTR1_ECOM_B2B => "gstr1/ecob2b.json",
+    GSTR1_ECOM_B2C => "gstr1/ecob2c.json",
+    GSTR1_ECOM_URP2B => "gstr1/ecourp2b.json",
+    GSTR1_ECOM_URP2C => "gstr1/ecourp2c.json",
+    GSTR1_ECOMA_B2B => "gstr1/ecoab2b.json",
+    GSTR1_ECOMA_B2C => "gstr1/ecoab2c.json",
+    GSTR1_ECOMA_URP2B => "gstr1/ecoaurp2b.json",
+    GSTR1_ECOMA_URP2C => "gstr1/ecoaurp2c.json",
+    GSTR1_DOC_ISSUE => "gstr1/docs.json",
+    GSTR1_HSN_B2B => "gstr1/hsn-b2b.json",
+    GSTR1_HSN_B2C => "gstr1/hsn-b2c.json",
 }
 
 /// Look up a section by its code, e.g. `b2b`.
 pub fn section(code: &str) -> Option<&'static SectionSpec> {
-    sections().into_iter().find(|s| s.section == code)
+    sections().iter().find(|s| s.section == code).copied()
 }
 
 /// Section codes, for listing what is available in a usage message.
 pub fn section_codes() -> Vec<&'static str> {
-    sections().into_iter().map(|s| s.section.as_str()).collect()
+    sections().iter().map(|s| s.section.as_str()).collect()
 }
 
 #[cfg(test)]

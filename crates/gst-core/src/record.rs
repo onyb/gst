@@ -39,6 +39,13 @@ impl Row {
         }
     }
 
+    /// This row with one cell replaced — the builder tests use to derive a
+    /// variant from a known-good base.
+    pub fn with_cell(mut self, column: impl Into<String>, value: impl Into<String>) -> Self {
+        self.cells.insert(column.into(), value.into());
+        self
+    }
+
     pub fn get(&self, column: &str) -> Option<&str> {
         self.cells.get(column).map(String::as_str)
     }

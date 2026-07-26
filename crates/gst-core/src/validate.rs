@@ -108,23 +108,20 @@ pub fn validate(spec: &SectionSpec, rows: &[Row], ctx: &FilingContext) -> Report
     let mut report = Report::default();
 
     for row in rows {
-        match validate_row(spec, row, ctx) {
-            Ok(record) => {
-                let rule_findings = apply_rules(spec, &record);
-                if rule_findings.is_empty() {
-                    report.records.push(record);
-                } else {
-                    // A row failing a cross-field rule is not generated, but
-                    // warnings alone must not drop it.
-                    let fatal = rule_findings.iter().any(|f| f.severity == Severity::Error);
-                    if !fatal {
-                        report.records.push(record);
-                    }
-                    report.findings.extend(rule_findings);
-                }
+        let record = match validate_row(spec, row, ctx) {
+            Ok(record) => record,
+            Err(findings) => {
+                report.findings.extend(findings);
+                continue;
             }
-            Err(findings) => report.findings.extend(findings),
+        };
+        let rule_findings = apply_rules(spec, &record);
+        // A row failing a cross-field rule is not generated, but warnings
+        // alone must not drop it.
+        if !rule_findings.iter().any(|f| f.severity == Severity::Error) {
+            report.records.push(record);
         }
+        report.findings.extend(rule_findings);
     }
 
     report
@@ -240,9 +237,9 @@ fn validate_field(field: &Field, raw: &str, ctx: &FilingContext) -> Result<Cell,
     }
 
     if let Some(allowed) = allowed_values(field)?
-        && !allowed.iter().any(|v| v.matches_text(&checked))
+        && !allowed.as_slice().iter().any(|v| v.matches_text(&checked))
     {
-        let shown: Vec<String> = allowed.iter().map(SpecValue::as_text).collect();
+        let shown: Vec<String> = allowed.as_slice().iter().map(SpecValue::as_text).collect();
         return Err(format!(
             "'{}' must be one of {} — found '{text}'",
             field.column,
@@ -266,7 +263,14 @@ fn validate_field(field: &Field, raw: &str, ctx: &FilingContext) -> Result<Cell,
         ));
     }
 
-    to_cell(field, &checked, ctx)
+    to_cell(field, &checked)
+}
+
+/// Parse an amount the way numeric cells are read: surrounding whitespace and
+/// every thousands separator stripped. The all-commas rule is a deliberate
+/// divergence from the reference — see the note in [`validate_field`].
+pub fn parse_amount(text: &str) -> Option<Decimal> {
+    text.trim().replace(',', "").parse().ok()
 }
 
 /// Named field-level checks the spec refers to by name.
@@ -412,7 +416,7 @@ fn describe_date_error(field: &Field, text: &str, e: DateError) -> String {
 }
 
 /// Apply the field's declared transform and settle its final type.
-fn to_cell(field: &Field, checked: &str, _ctx: &FilingContext) -> Result<Cell, String> {
+fn to_cell(field: &Field, checked: &str) -> Result<Cell, String> {
     match field.transform.as_deref() {
         // Percent to factor: 100 becomes 1.00, 65 becomes 0.65. Every computed
         // tax amount is scaled by it.
@@ -473,12 +477,30 @@ fn state_code_prefix(text: &str) -> String {
         .collect()
 }
 
-fn allowed_values(field: &Field) -> Result<Option<Vec<SpecValue>>, String> {
+/// A field's value domain, borrowed from wherever it lives — the spec's inline
+/// `enum` or a memoized master — so checking a cell clones nothing.
+enum AllowedValues<'a> {
+    Inline(&'a [SpecValue]),
+    Master(std::sync::Arc<Vec<SpecValue>>),
+}
+
+impl AllowedValues<'_> {
+    fn as_slice(&self) -> &[SpecValue] {
+        match self {
+            AllowedValues::Inline(values) => values,
+            AllowedValues::Master(values) => values,
+        }
+    }
+}
+
+fn allowed_values(field: &Field) -> Result<Option<AllowedValues<'_>>, String> {
     if let Some(inline) = &field.allowed {
-        return Ok(Some(inline.clone()));
+        return Ok(Some(AllowedValues::Inline(inline)));
     }
     match &field.enum_ref {
-        Some(reference) => masters::resolve_enum_ref(reference).map(Some),
+        Some(reference) => {
+            masters::resolve_enum_ref(reference).map(|values| Some(AllowedValues::Master(values)))
+        }
         None => Ok(None),
     }
 }
@@ -522,7 +544,9 @@ pub fn evaluate(predicate: &Predicate, record: &Record) -> bool {
         Predicate::SignAgreesWith { field, other } => {
             match (record.number(field), record.number(other)) {
                 // Zero agrees with anything; otherwise the signs must match.
-                (Some(a), Some(b)) => a.is_zero() || b.is_zero() || a.is_sign_negative() == b.is_sign_negative(),
+                (Some(a), Some(b)) => {
+                    a.is_zero() || b.is_zero() || a.is_sign_negative() == b.is_sign_negative()
+                }
                 _ => true,
             }
         }

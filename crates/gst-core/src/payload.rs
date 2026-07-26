@@ -37,6 +37,16 @@ impl Json {
         }
     }
 
+    /// Emptiness that recurses into objects: an object whose every member is
+    /// itself empty counts as empty. This is what the upload envelope's
+    /// omit-empty rule means by empty; a numeric 0 is NOT empty.
+    pub fn is_empty_recursive(&self) -> bool {
+        match self {
+            Json::Obj(entries) => entries.iter().all(|(_, v)| v.is_empty_recursive()),
+            _ => self.is_empty(),
+        }
+    }
+
     /// Insert at a dotted path, creating intermediate objects as needed, so a
     /// spec key like `itm_det.txval` nests without the caller doing the work.
     pub fn insert_path(&mut self, path: &str, value: Json) {
@@ -82,7 +92,7 @@ impl Json {
         out
     }
 
-    fn write(&self, out: &mut String) {
+    pub(crate) fn write(&self, out: &mut String) {
         match self {
             Json::Null => out.push_str("null"),
             Json::Bool(b) => out.push_str(if *b { "true" } else { "false" }),

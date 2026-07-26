@@ -7,15 +7,17 @@
 //! everything else.
 
 use std::collections::HashMap;
+use std::path::Path;
 
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use std::sync::LazyLock;
 
-use crate::generate::Generated;
+use crate::generate::{Generated, generate};
+use crate::import::{ImportError, Workbook};
 use crate::payload::Json;
-use crate::spec::period_as_yyyymm;
-use crate::validate::FilingContext;
+use crate::spec::{self, period_as_yyyymm};
+use crate::validate::{FilingContext, Finding, validate};
 
 #[derive(Debug, Clone, Deserialize)]
 struct EnvelopeKey {
@@ -70,8 +72,10 @@ struct EnvelopeSpec {
 }
 
 static ENVELOPE: LazyLock<EnvelopeSpec> = LazyLock::new(|| {
-    serde_json::from_str(include_str!("../../../spec/gstr1/upload-envelope.json"))
-        .expect("embedded spec gstr1/upload-envelope.json is invalid")
+    crate::masters::embedded(
+        "gstr1/upload-envelope.json",
+        include_str!("../../../spec/gstr1/upload-envelope.json"),
+    )
 });
 
 /// Turnover figures, which only some periods carry.
@@ -106,8 +110,96 @@ pub fn filename(ctx: &FilingContext, generated_on: chrono::NaiveDate) -> String 
         .replace("{gstin}", &ctx.supplier_gstin)
 }
 
-fn period_string(ctx: &FilingContext) -> String {
-    format!("{:02}{:04}", ctx.period.month, ctx.period.year)
+/// One section's contribution to a whole-workbook run.
+#[derive(Debug, Clone)]
+pub struct SectionStat {
+    pub section: &'static str,
+    pub rows: usize,
+    pub accepted: usize,
+    pub envelopes: usize,
+}
+
+/// Every section of one workbook, read, validated and grouped — the input
+/// [`build`] wraps into the upload file.
+#[derive(Debug, Clone, Default)]
+pub struct WorkbookRun {
+    /// Section code to generated payload, for sections that produced records.
+    pub sections: HashMap<String, Generated>,
+    /// Validation and grouping findings across all sections.
+    pub findings: Vec<Finding>,
+    /// One entry per section sheet that had data, in return order.
+    pub stats: Vec<SectionStat>,
+}
+
+impl WorkbookRun {
+    /// The complete upload file for this run.
+    pub fn build(&self, ctx: &FilingContext, turnover: Turnover) -> Json {
+        build(&self.sections, ctx, turnover)
+    }
+}
+
+/// Why a whole-workbook read stopped.
+#[derive(Debug)]
+pub enum WorkbookError {
+    /// The file itself could not be opened.
+    Open(ImportError),
+    /// One section's sheet was unreadable. A *missing* sheet is not an error —
+    /// a workbook legitimately lacks sheets for sections the filer does not use.
+    Section {
+        section: &'static str,
+        error: ImportError,
+    },
+}
+
+impl std::fmt::Display for WorkbookError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WorkbookError::Open(e) => write!(f, "{e}"),
+            WorkbookError::Section { section, error } => {
+                write!(f, "cannot read section '{section}': {error}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for WorkbookError {}
+
+/// Read every section the engine knows from one workbook, validating and
+/// grouping each. The workbook is opened and parsed once, not per section.
+/// Sections whose sheet is absent or empty contribute nothing.
+pub fn read_workbook(path: &Path, ctx: &FilingContext) -> Result<WorkbookRun, WorkbookError> {
+    let mut workbook = Workbook::open(path).map_err(WorkbookError::Open)?;
+    let mut run = WorkbookRun::default();
+
+    for section in spec::sections() {
+        let rows = match workbook.read(section) {
+            Ok(rows) => rows,
+            Err(ImportError::SheetMissing { .. }) => continue,
+            Err(error) => {
+                return Err(WorkbookError::Section {
+                    section: section.section.as_str(),
+                    error,
+                });
+            }
+        };
+        if rows.is_empty() {
+            continue;
+        }
+        let report = validate(section, &rows, ctx);
+        let mut out = generate(section, &report.records, ctx);
+        run.stats.push(SectionStat {
+            section: section.section.as_str(),
+            rows: rows.len(),
+            accepted: report.records.len(),
+            envelopes: out.envelopes.len(),
+        });
+        run.findings.extend(report.findings);
+        run.findings.extend(std::mem::take(&mut out.findings));
+        if !out.envelopes.is_empty() {
+            run.sections.insert(section.section.clone(), out);
+        }
+    }
+    Ok(run)
 }
 
 /// Build the complete upload file.
@@ -124,38 +216,24 @@ pub fn build(
     let bifurcated = period_as_yyyymm(&spec.hsn_bifurcation_start_period)
         .is_some_and(|start| ctx.period.as_yyyymm() >= start);
 
-    let take = |code: &str| -> Vec<Json> {
-        sections
-            .get(code)
-            .map(|g| g.envelopes.clone())
-            .unwrap_or_default()
-    };
+    let take = |code: &str| -> Vec<Json> { section_envelopes(sections, code, None) };
     // A member draws from one section, optionally taking only the records that
     // section tagged for it.
     let take_member = |member: &EnvelopeMember| -> Vec<Json> {
         let Some(code) = member.from.strip_prefix("section:") else {
-            panic!("envelope member `{}` names unknown source `{}`", member.key, member.from);
+            panic!(
+                "envelope member `{}` names unknown source `{}`",
+                member.key, member.from
+            );
         };
-        let Some(generated) = sections.get(code) else {
-            return Vec::new();
-        };
-        match &member.member {
-            None => generated.envelopes.clone(),
-            Some(tag) => generated
-                .envelopes
-                .iter()
-                .zip(generated.members.iter())
-                .filter(|(_, m)| m.as_deref() == Some(tag.as_str()))
-                .map(|(json, _)| json.clone())
-                .collect(),
-        }
+        section_envelopes(sections, code, member.member.as_deref())
     };
 
     let mut out = Json::obj();
     for entry in &spec.keys {
-        let value = match entry.from.as_str() {
+        let mut value = match entry.from.as_str() {
             "context:gstin" => Json::Str(ctx.supplier_gstin.clone()),
-            "context:period" => Json::Str(period_string(ctx)),
+            "context:period" => Json::Str(ctx.period.as_mmyyyy()),
             "context:gross_turnover" => match turnover.gross {
                 Some(v) => Json::Num(v),
                 None => continue,
@@ -205,16 +283,37 @@ pub fn build(
         // records is absent entirely rather than present as an empty array.
         // omit-empty is recursive, so empty members of a nested object (an
         // unused half of the HSN summary, say) drop the same way.
-        let mut value = value;
         if spec.omit_empty_sections {
             prune_empty(&mut value);
-            if is_empty_section(&value) {
+            if value.is_empty_recursive() {
                 continue;
             }
         }
         out.insert_path(&entry.key, value);
     }
     out
+}
+
+/// The envelopes one section generated, optionally only those the section
+/// tagged for a given payload member. An absent section yields nothing.
+fn section_envelopes(
+    sections: &HashMap<String, Generated>,
+    code: &str,
+    tag: Option<&str>,
+) -> Vec<Json> {
+    let Some(generated) = sections.get(code) else {
+        return Vec::new();
+    };
+    match tag {
+        None => generated.envelopes.clone(),
+        Some(tag) => generated
+            .envelopes
+            .iter()
+            .zip(generated.members.iter())
+            .filter(|(_, m)| m.as_deref() == Some(tag))
+            .map(|(json, _)| json.clone())
+            .collect(),
+    }
 }
 
 /// Drop empty members from a nested object, recursively.
@@ -228,19 +327,7 @@ fn prune_empty(value: &mut Json) {
         for (_, v) in entries.iter_mut() {
             prune_empty(v);
         }
-        entries.retain(|(_, v)| !is_empty_section(v));
-    }
-}
-
-/// Whether a section's value would be dropped by omit-empty: an empty array, or
-/// an object whose every member is itself empty. A numeric 0 is NOT empty.
-fn is_empty_section(value: &Json) -> bool {
-    match value {
-        Json::Arr(items) => items.is_empty(),
-        Json::Obj(entries) => entries.iter().all(|(_, v)| is_empty_section(v)),
-        Json::Str(s) => s.is_empty(),
-        Json::Null => true,
-        _ => false,
+        entries.retain(|(_, v)| !v.is_empty_recursive());
     }
 }
 

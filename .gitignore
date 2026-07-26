@@ -35,3 +35,4 @@ extracted/
 # Committed sample data lives in fixtures/, which these do not match.
 /out/
 /*.csv
+__pycache__/

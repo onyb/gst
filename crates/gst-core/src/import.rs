@@ -11,7 +11,7 @@ use std::path::Path;
 use calamine::{Data, Reader};
 
 use crate::record::Row;
-use crate::spec::SectionSpec;
+use crate::spec::{Field, SectionSpec};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ImportError {
@@ -83,64 +83,59 @@ pub fn read(path: &Path, spec: &SectionSpec) -> Result<Vec<Row>, ImportError> {
     }
 }
 
+/// An open spreadsheet. Opening parses the file's shared structures once, so
+/// reading many sections out of one workbook — as `gst upload` does — costs
+/// one parse, not one per section.
+pub struct Workbook {
+    sheets: calamine::Sheets<std::io::BufReader<std::fs::File>>,
+}
+
+impl Workbook {
+    pub fn open(path: &Path) -> Result<Self, ImportError> {
+        let sheets = calamine::open_workbook_auto(path)
+            .map_err(|e| ImportError::Io(format!("cannot open {}: {e}", path.display())))?;
+        Ok(Self { sheets })
+    }
+
+    /// Read one section's sheet, using the sheet name and row offsets the spec
+    /// declares.
+    pub fn read(&mut self, spec: &SectionSpec) -> Result<Vec<Row>, ImportError> {
+        let source = spec
+            .source
+            .excel
+            .as_ref()
+            .ok_or(ImportError::UnsupportedSource("a spreadsheet"))?;
+
+        let available: Vec<String> = self.sheets.sheet_names().to_vec();
+        let range =
+            self.sheets
+                .worksheet_range(&source.sheet)
+                .map_err(|_| ImportError::SheetMissing {
+                    sheet: source.sheet.clone(),
+                    available,
+                })?;
+
+        // A sheet's used range need not start at A1, so absolute row numbers
+        // come from the range's own origin. 1-based, matching how the spec and
+        // every error message count rows.
+        let first_absolute = range.start().map(|(row, _)| row as usize).unwrap_or(0);
+        collect_rows(
+            spec,
+            &source.sheet,
+            source.header_row,
+            source.first_data_row,
+            range
+                .rows()
+                .enumerate()
+                .map(|(offset, cells)| Ok((first_absolute + offset + 1, cells))),
+        )
+    }
+}
+
 /// Read a section from a spreadsheet, using the sheet name and row offsets the
 /// spec declares.
 pub fn read_excel(path: &Path, spec: &SectionSpec) -> Result<Vec<Row>, ImportError> {
-    let source = spec
-        .source
-        .excel
-        .as_ref()
-        .ok_or(ImportError::UnsupportedSource("a spreadsheet"))?;
-
-    let mut workbook = calamine::open_workbook_auto(path)
-        .map_err(|e| ImportError::Io(format!("cannot open {}: {e}", path.display())))?;
-
-    let available: Vec<String> = workbook.sheet_names().to_vec();
-    let range = workbook
-        .worksheet_range(&source.sheet)
-        .map_err(|_| ImportError::SheetMissing {
-            sheet: source.sheet.clone(),
-            available,
-        })?;
-
-    // A sheet's used range need not start at A1, so absolute row numbers come
-    // from the range's own origin.
-    let first_absolute = range.start().map(|(row, _)| row as usize).unwrap_or(0);
-
-    let mut header: Option<Vec<String>> = None;
-    let mut rows = Vec::new();
-
-    for (offset, cells) in range.rows().enumerate() {
-        // 1-based, matching how the spec and every error message count rows.
-        let sheet_row = first_absolute + offset + 1;
-        if sheet_row == source.header_row {
-            header = Some(cells.iter().map(cell_text).collect());
-            continue;
-        }
-        if sheet_row < source.first_data_row {
-            continue;
-        }
-        let Some(header) = header.as_ref() else {
-            continue;
-        };
-        // The official template pre-formats 20 000 rows; blank ones are not
-        // data and must not be reported as invalid.
-        if cells.iter().all(|c| cell_text(c).is_empty()) {
-            continue;
-        }
-        rows.push(build_row(spec, header, sheet_row, |i| {
-            cells.get(i).map(cell_text).unwrap_or_default()
-        }));
-    }
-
-    let Some(header) = header else {
-        return Err(ImportError::HeaderRowMissing {
-            sheet: source.sheet.clone(),
-            header_row: source.header_row,
-        });
-    };
-    check_columns(spec, &header)?;
-    Ok(rows)
+    Workbook::open(path)?.read(spec)
 }
 
 /// Read a section from a section-wise CSV.
@@ -153,68 +148,136 @@ pub fn read_csv(path: &Path, spec: &SectionSpec) -> Result<Vec<Row>, ImportError
         .from_path(path)
         .map_err(|e| ImportError::Io(format!("cannot open {}: {e}", path.display())))?;
 
-    let mut header: Option<Vec<String>> = None;
+    collect_rows(
+        spec,
+        &path.display().to_string(),
+        header_row,
+        header_row + 1,
+        reader.records().enumerate().map(|(offset, record)| {
+            record
+                .map(|r| (offset + 1, r))
+                .map_err(|e| ImportError::Io(format!("malformed CSV: {e}")))
+        }),
+    )
+}
+
+/// One raw line of input, whatever the format stores cells as. Blankness is
+/// answered without rendering cells to text, because the official template
+/// pre-formats ~20 000 empty rows per sheet.
+trait RawCells {
+    fn texts(&self) -> Vec<String>;
+    fn is_blank(&self) -> bool;
+    fn text_at(&self, i: usize) -> String;
+}
+
+impl RawCells for &[Data] {
+    fn texts(&self) -> Vec<String> {
+        self.iter().map(cell_text).collect()
+    }
+
+    fn is_blank(&self) -> bool {
+        self.iter().all(|cell| match cell {
+            Data::Empty => true,
+            Data::String(s) | Data::DateTimeIso(s) | Data::DurationIso(s) => s.trim().is_empty(),
+            _ => false,
+        })
+    }
+
+    fn text_at(&self, i: usize) -> String {
+        self.get(i).map(cell_text).unwrap_or_default()
+    }
+}
+
+impl RawCells for csv::StringRecord {
+    fn texts(&self) -> Vec<String> {
+        self.iter().map(|c| c.trim().to_owned()).collect()
+    }
+
+    fn is_blank(&self) -> bool {
+        self.iter().all(|c| c.trim().is_empty())
+    }
+
+    fn text_at(&self, i: usize) -> String {
+        self.get(i).unwrap_or("").trim().to_owned()
+    }
+}
+
+/// The spec's fields resolved to the column positions their headers occupy —
+/// computed once when the header row is seen, so building each row is a
+/// direct index rather than a per-field header scan.
+struct HeaderMap<'s> {
+    fields: Vec<(&'s Field, usize)>,
+    /// Columns the spec requires that the header does not have.
+    missing: Vec<String>,
+}
+
+impl<'s> HeaderMap<'s> {
+    fn new(spec: &'s SectionSpec, header: &[String]) -> Self {
+        let mut fields = Vec::new();
+        let mut missing = Vec::new();
+        for field in &spec.fields {
+            match header.iter().position(|h| h == &field.column) {
+                Some(index) => fields.push((field, index)),
+                None => missing.push(field.column.clone()),
+            }
+        }
+        Self { fields, missing }
+    }
+
+    /// Build a row keyed by the spec's column names, pulling each from
+    /// wherever the header puts it. Columns the spec does not declare are
+    /// dropped.
+    fn build_row(&self, sheet_row: usize, value_at: impl Fn(usize) -> String) -> Row {
+        let mut row = Row::new(sheet_row);
+        for (field, index) in &self.fields {
+            row.cells.insert(field.column.clone(), value_at(*index));
+        }
+        row
+    }
+}
+
+/// The reader loop both formats share: capture the header row, skip everything
+/// before the first data row, skip blank lines, and key each remaining line's
+/// cells by the spec's columns.
+fn collect_rows<C: RawCells>(
+    spec: &SectionSpec,
+    sheet: &str,
+    header_row: usize,
+    first_data_row: usize,
+    lines: impl Iterator<Item = Result<(usize, C), ImportError>>,
+) -> Result<Vec<Row>, ImportError> {
+    let mut header: Option<HeaderMap> = None;
     let mut rows = Vec::new();
 
-    for (offset, record) in reader.records().enumerate() {
-        let record = record.map_err(|e| ImportError::Io(format!("malformed CSV: {e}")))?;
-        let line = offset + 1;
-        if line == header_row {
-            header = Some(record.iter().map(|c| c.trim().to_owned()).collect());
+    for line in lines {
+        let (sheet_row, cells) = line?;
+        if sheet_row == header_row {
+            header = Some(HeaderMap::new(spec, &cells.texts()));
             continue;
         }
-        if line < header_row {
+        if sheet_row < first_data_row {
             continue;
         }
         let Some(header) = header.as_ref() else {
             continue;
         };
-        if record.iter().all(|c| c.trim().is_empty()) {
+        // Blank rows are not data and must not be reported as invalid.
+        if cells.is_blank() {
             continue;
         }
-        rows.push(build_row(spec, header, line, |i| {
-            record.get(i).unwrap_or("").trim().to_owned()
-        }));
+        rows.push(header.build_row(sheet_row, |i| cells.text_at(i)));
     }
 
     let Some(header) = header else {
         return Err(ImportError::HeaderRowMissing {
-            sheet: path.display().to_string(),
+            sheet: sheet.to_owned(),
             header_row,
         });
     };
-    check_columns(spec, &header)?;
-    Ok(rows)
-}
-
-/// Build a row keyed by the spec's column names, pulling each from wherever
-/// the header puts it. Columns the spec does not declare are dropped.
-fn build_row(
-    spec: &SectionSpec,
-    header: &[String],
-    sheet_row: usize,
-    value_at: impl Fn(usize) -> String,
-) -> Row {
-    let mut row = Row::new(sheet_row);
-    for field in &spec.fields {
-        if let Some(index) = header.iter().position(|h| h == &field.column) {
-            row.cells.insert(field.column.clone(), value_at(index));
-        }
-    }
-    row
-}
-
-fn check_columns(spec: &SectionSpec, header: &[String]) -> Result<(), ImportError> {
-    let missing: Vec<String> = spec
-        .fields
-        .iter()
-        .filter(|f| !header.iter().any(|h| h == &f.column))
-        .map(|f| f.column.clone())
-        .collect();
-    if missing.is_empty() {
-        Ok(())
+    if header.missing.is_empty() {
+        Ok(rows)
     } else {
-        Err(ImportError::MissingColumns(missing))
+        Err(ImportError::MissingColumns(header.missing.clone()))
     }
 }
 
