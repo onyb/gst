@@ -1,0 +1,43 @@
+{
+  "description": "B2B invoice type codes. table4 = GSTR-1 table 4 (B2B/SEZ/DE); table15 = ECO table 15 variant (no CBW).",
+  "table4": [
+    {
+      "code": "R",
+      "name": "Regular B2B"
+    },
+    {
+      "code": "DE",
+      "name": "Deemed Exports"
+    },
+    {
+      "code": "SEWP",
+      "name": "SEZ Supplies with payment"
+    },
+    {
+      "code": "SEWOP",
+      "name": "SEZ Supplies without payment"
+    },
+    {
+      "code": "CBW",
+      "name": "Intra-State supplies attracting IGST"
+    }
+  ],
+  "table15": [
+    {
+      "code": "R",
+      "name": "Regular"
+    },
+    {
+      "code": "DE",
+      "name": "Deemed Exports"
+    },
+    {
+      "code": "SEWP",
+      "name": "SEZ Supplies with payment"
+    },
+    {
+      "code": "SEWOP",
+      "name": "SEZ Supplies without payment"
+    }
+  ]
+}

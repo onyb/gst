@@ -1,0 +1,45 @@
+{
+  "description": "GST rate slabs in percent. item = allowed per-line rates (IGST, or CGST+SGST combined); cgst/sgst are half-rates for intra-state splits; cess slabs per portal masters.",
+  "item": [
+    0,
+    0.1,
+    0.25,
+    1,
+    1.5,
+    3,
+    5,
+    6,
+    7.5,
+    12,
+    18,
+    28,
+    40
+  ],
+  "igst": [
+    0,
+    5,
+    12,
+    18,
+    28
+  ],
+  "cgst": [
+    0,
+    2.5,
+    6,
+    9,
+    14
+  ],
+  "sgst": [
+    0,
+    2.5,
+    6,
+    9,
+    14
+  ],
+  "cess": [
+    0,
+    15,
+    135,
+    290
+  ]
+}

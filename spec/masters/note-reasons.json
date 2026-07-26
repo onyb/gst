@@ -1,0 +1,33 @@
+{
+  "description": "Credit/debit note reason codes (CDNR/CDNUR tables)",
+  "reasons": [
+    {
+      "code": "01",
+      "name": "Sales Return"
+    },
+    {
+      "code": "02",
+      "name": "Post Sale Discount"
+    },
+    {
+      "code": "03",
+      "name": "Deficiency in services"
+    },
+    {
+      "code": "04",
+      "name": "Correction in Invoice"
+    },
+    {
+      "code": "05",
+      "name": "Change in POS"
+    },
+    {
+      "code": "06",
+      "name": "Finalization of Provisional assessment"
+    },
+    {
+      "code": "07",
+      "name": "Others"
+    }
+  ]
+}
