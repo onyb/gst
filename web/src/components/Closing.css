@@ -39,11 +39,12 @@
 }
 
 .closing-install:hover {
-  background: #232c47;
+  background: #ffffff;
 }
 
 .closing-install > span[aria-hidden] {
-  color: var(--term-green);
+  color: inherit;
+  opacity: 0.5;
 }
 
 .closing-install code {
@@ -53,7 +54,8 @@
 .closing-copy {
   flex-shrink: 0;
   margin-left: var(--space-2);
-  color: var(--term-fg-soft);
+  color: inherit;
+  opacity: 0.55;
   text-transform: uppercase;
   font-size: 0.6875rem;
   letter-spacing: 0.08em;

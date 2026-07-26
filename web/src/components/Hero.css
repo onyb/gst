@@ -90,11 +90,12 @@
 }
 
 .hero-install:hover {
-  background: #232c47;
+  background: #ffffff;
 }
 
 .hero-install-prompt {
-  color: var(--term-green);
+  color: inherit;
+  opacity: 0.5;
 }
 
 .hero-install-cmd {
@@ -106,7 +107,8 @@
 .hero-install-action {
   flex-shrink: 0;
   margin-left: var(--space-2);
-  color: var(--term-fg-soft);
+  color: inherit;
+  opacity: 0.55;
   text-transform: uppercase;
   font-size: 0.6875rem;
   letter-spacing: 0.08em;
@@ -135,8 +137,8 @@
 /* The stamp lands on the paper above the ledger, clipping its corner. */
 .hero-figure .stamp {
   position: absolute;
-  top: -5rem;
-  right: -2.25rem;
+  top: -4.5rem;
+  right: -3.25rem;
   z-index: 1;
 }
 
@@ -148,8 +150,8 @@
     margin-top: var(--space-5);
   }
   .hero-figure .stamp {
-    top: -2rem;
-    right: 0;
+    top: -3.25rem;
+    right: -0.5rem;
   }
 }
 

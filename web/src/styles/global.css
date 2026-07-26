@@ -44,7 +44,7 @@ body {
   left: max(var(--space-4), calc(50% - var(--content-width) / 2));
   width: 1px;
   background: var(--stamp);
-  opacity: 0.35;
+  opacity: 0.4;
   pointer-events: none;
 }
 
@@ -92,7 +92,7 @@ svg {
 
 ::selection {
   background: var(--stamp);
-  color: var(--paper);
+  color: var(--term-bg);
 }
 
 :focus-visible {

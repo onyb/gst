@@ -1,8 +1,17 @@
+/* The one light surface on the page: a spreadsheet is white paper, and it
+   stays white on the dark desk. Colors are scoped here, not themed. */
 .ledger {
-  background: var(--paper-raised);
-  border: 1px solid var(--rule-strong);
+  --lp-paper: #fdfdfb;
+  --lp-ink: #171d2b;
+  --lp-soft: #5c6374;
+  --lp-rule: #e4e4dc;
+  --lp-stamp: #5535a4;
+
+  background: var(--lp-paper);
+  color: var(--lp-ink);
   border-radius: var(--radius);
   overflow-x: auto;
+  box-shadow: 0 16px 34px -20px rgba(0, 0, 0, 0.6);
 }
 
 .ledger-caption {
@@ -10,9 +19,9 @@
   font-size: 0.6875rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--ink-soft);
+  color: var(--lp-soft);
   padding: var(--space-3) var(--space-4);
-  border-bottom: var(--border);
+  border-bottom: 1px solid var(--lp-rule);
 }
 
 .ledger table {
@@ -27,12 +36,12 @@
 .ledger td {
   text-align: left;
   padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--rule);
+  border-bottom: 1px solid var(--lp-rule);
   white-space: nowrap;
 }
 
 .ledger th {
-  color: var(--ink-soft);
+  color: var(--lp-soft);
   font-weight: 500;
   font-size: 0.6875rem;
   letter-spacing: 0.04em;
@@ -44,8 +53,8 @@
 }
 
 .ledger td.is-flagged {
-  background: var(--stamp-soft);
-  color: var(--stamp);
+  background: rgba(85, 53, 164, 0.12);
+  color: var(--lp-stamp);
   font-weight: 500;
 }
 
@@ -55,5 +64,5 @@
 }
 
 .ledger tr.is-flagged-row.is-active td {
-  background: rgba(85, 53, 164, 0.12);
+  background: rgba(85, 53, 164, 0.14);
 }

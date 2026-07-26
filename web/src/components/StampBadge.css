@@ -3,17 +3,16 @@
   width: var(--stamp-size);
   height: var(--stamp-size);
   border-radius: 50%;
-  border: 2px solid var(--stamp);
-  outline: 1px solid var(--stamp);
+  border: 2px solid var(--stamp-ink);
+  outline: 1px solid var(--stamp-ink);
   outline-offset: -6px;
-  color: var(--stamp);
+  color: var(--stamp-ink);
   display: flex;
   align-items: center;
   justify-content: center;
   transform: rotate(-9deg);
   flex-shrink: 0;
   position: relative;
-  mix-blend-mode: multiply;
 }
 
 .stamp::before {
@@ -21,7 +20,7 @@
   position: absolute;
   inset: -3px;
   border-radius: 50%;
-  border: 1px solid var(--stamp);
+  border: 1px solid var(--stamp-ink);
   opacity: 0.35;
 }
 
@@ -47,7 +46,7 @@
 .stamp-text .stamp-rule {
   width: 2.25rem;
   height: 1px;
-  background: var(--stamp);
+  background: var(--stamp-ink);
   opacity: 0.5;
   margin: 0.3rem auto;
 }

@@ -1,16 +1,21 @@
 :root {
-  /* Color — crisp white form paper, blue-black ink, violet rubber-stamp ink */
-  --paper: #fbfbf8;
-  --paper-raised: #ffffff;
-  --rule: #e4e4dc;
-  --rule-strong: #cfcfc4;
-  --ink: #171d2b;
-  --ink-soft: #5c6374;
-  --stamp: #5535a4;
-  --stamp-soft: rgba(85, 53, 164, 0.1);
-  --ok: #2e7d4f;
-  --ok-soft: rgba(46, 125, 79, 0.12);
-  --term-bg: #121729;
+  /* Color — dark desk, light ink, violet rubber-stamp accent. The ledger
+     snippet alone stays paper-white (a spreadsheet is a white artifact);
+     its colors are scoped locally in LedgerSnippet.css. */
+  --paper: #131828;
+  --paper-raised: #1a2036;
+  --rule: rgba(232, 235, 244, 0.1);
+  --rule-strong: rgba(232, 235, 244, 0.22);
+  --ink: #e8eaf2;
+  --ink-soft: #9aa3b8;
+  --stamp: #a58ce8;
+  --stamp-soft: rgba(165, 140, 232, 0.14);
+  /* Mid violet, legible on both the dark page and the white ledger corner
+     the stamp overlaps. */
+  --stamp-ink: #8b70dd;
+  --ok: #7cc394;
+  --ok-soft: rgba(124, 195, 148, 0.12);
+  --term-bg: #0c101d;
   --term-fg: #e6e9f2;
   --term-fg-soft: #8891a6;
   --term-green: #79b586;
