@@ -9,14 +9,15 @@
   "hash": "hash",
   "notes": [
     "`version` is a literal tied to the tool release, not to the return.",
-    "`hash` is the literal four-character string 'hash' \u2014 a placeholder the tool never fills in. Confirmed against a captured file.",
+    "`hash` is the literal four-character string 'hash' — a placeholder the tool never fills in. Confirmed against a captured file.",
     "`gt` and `cur_gt` (aggregate turnover) appear immediately after `fp` and only when a numeric turnover is supplied.",
     "`hsn` changes shape with the return period: a single `data` array before 05-2025, and `hsn_b2b` / `hsn_b2c` arrays from 05-2025 onward.",
     "EMPTY SECTIONS ARE OMITTED. The key list below is the working file's template, but the upload file passes through omit-empty, so a section with no records is absent entirely rather than present as []. An empty return therefore carries only gstin, fp, version and hash. Confirmed by diffing a file captured from the running tool.",
     "`hsnSac` is in the working-file template but, being always empty, never survives into the upload file.",
     "A numeric 0 survives omit-empty, so `csamt: 0` is emitted rather than dropped.",
-    "omit-empty is recursive, so an empty member of a nested object is dropped too \u2014 an HSN summary with only a B2B half emits `hsn: {hsn_b2b: [...]}` with no `hsn_b2c` key. Verified against a file captured from the tool for exactly that case: a workbook with the B2C half left blank produced a one-member `hsn` object, and this implementation reproduces it byte for byte.",
-    "THE ADJUSTMENT TABLES ARE RENAMED IN THE UPLOAD FILE. `atadj` becomes `txpd` and `atadja` becomes `txpda`, and because the rename is a plain assignment of a key the template never declared, the two renamed sections are appended AFTER every other section \u2014 past `hsn` and the e-commerce blocks \u2014 rather than keeping their original position. The originals are set to `[]` and then dropped by omit-empty. Reading the working-file template alone gives both the wrong key names and the wrong position; verified against a captured file."
+    "omit-empty is recursive, so an empty member of a nested object is dropped too — an HSN summary with only a B2B half emits `hsn: {hsn_b2b: [...]}` with no `hsn_b2c` key. Verified against a file captured from the tool for exactly that case: a workbook with the B2C half left blank produced a one-member `hsn` object, and this implementation reproduces it byte for byte.",
+    "THE ADJUSTMENT TABLES ARE RENAMED IN THE UPLOAD FILE. `atadj` becomes `txpd` and `atadja` becomes `txpda`, and because the rename is a plain assignment of a key the template never declared, the two renamed sections are appended AFTER every other section — past `hsn` and the e-commerce blocks — rather than keeping their original position. The originals are set to `[]` and then dropped by omit-empty. Reading the working-file template alone gives both the wrong key names and the wrong position; verified against a captured file.",
+    "A QUARTERLY FILER'S FIRST TWO MONTHS ARE AN IFF, NOT A FULL RETURN. Only b2b, b2ba, cdnr, cdnra, ecom and ecoma survive alongside the four header keys; everything else, gt and cur_gt included, is deleted. See the `iff` block."
   ],
   "hsn_bifurcation_start_period": "052025",
   "filename": {
@@ -26,6 +27,22 @@
   "chunking": {
     "max_bytes": 4928307,
     "description": "The tool splits an upload into chunks at 4.7 MiB (4.7 * 1024 * 1024), not the 5 MB the portal documentation mentions."
+  },
+  "iff": {
+    "description": "A quarterly (QRMP) filer submits an Invoice Furnishing Facility return in the first two months of each quarter, and it carries only these keys. The reference deletes every other top-level key outright (offline.js:5464), including gt and cur_gt, when isTPQ is set and the period's month is not a multiple of 3. Introduced in release 3.0.0 and applicable from 1 January 2021.",
+    "applies_when": "quarterly_filer_in_month_1_or_2_of_quarter",
+    "keep_keys": [
+      "gstin",
+      "fp",
+      "version",
+      "hash",
+      "b2b",
+      "b2ba",
+      "cdnr",
+      "cdnra",
+      "ecom",
+      "ecoma"
+    ]
   },
   "keys": [
     {
