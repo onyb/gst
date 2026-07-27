@@ -83,6 +83,10 @@ struct Filing {
     /// Aggregate annual turnover exceeds 5 crore, which requires 6-digit HSN
     #[arg(long = "aato-over-5cr")]
     aato_over_5cr: bool,
+    /// File quarterly (QRMP). In months 1 and 2 of a quarter this produces an
+    /// IFF, which carries only B2B, B2BA, CDNR, CDNRA and the e-commerce tables
+    #[arg(long)]
+    quarterly: bool,
 }
 
 /// Filing details plus the section, for the single-section commands.
@@ -158,6 +162,7 @@ fn context(filing: &Filing) -> Result<FilingContext, String> {
         period,
         is_sez: filing.sez,
         aato_over_5cr: filing.aato_over_5cr,
+        is_quarterly: filing.quarterly,
     })
 }
 
@@ -388,7 +393,20 @@ fn run_upload(
             .ok_or_else(|| format!("--{flag} '{text}' is not a number")),
     };
     let turnover = match (parse_turnover("gt", gt), parse_turnover("cur-gt", cur_gt)) {
-        (Ok(gross), Ok(current)) => gst_core::upload::Turnover { gross, current },
+        (Ok(gross), Ok(current)) => {
+            // The reference emits both turnover keys or neither: it branches on
+            // the gross figure alone, and supplying only the current one makes
+            // it write `"cur_gt":NaN` and then fail to parse its own file. So
+            // one without the other is refused here rather than produced.
+            if gross.is_some() != current.is_some() {
+                eprintln!(
+                    "--gt and --cur-gt go together: give both or neither \
+                     (the reference emits both turnover figures or omits both)"
+                );
+                return ExitCode::from(EXIT_UNUSABLE);
+            }
+            gst_core::upload::Turnover { gross, current }
+        }
         (Err(e), _) | (_, Err(e)) => {
             eprintln!("{e}");
             return ExitCode::from(EXIT_UNUSABLE);
@@ -448,11 +466,27 @@ fn run_upload(
         .count();
     println!("\n{read} row(s) read, {accepted} accepted, {errors} error(s)");
 
+    // Whole-sheet problems carry no row number and would otherwise be invisible
+    // behind "run gst validate", which is a per-section command and cannot show
+    // a section that was skipped outright.
+    for finding in run
+        .findings
+        .iter()
+        .filter(|f| f.severity == Severity::Error && f.sheet_row == 0)
+    {
+        eprintln!("\n{}", finding.message);
+    }
+
+    // Measured the way the reference measures it, which is not the file's own
+    // length — see upload::reference_size.
     let limit = gst_core::upload::max_chunk_bytes();
-    if body.len() > limit {
+    let measured = gst_core::upload::reference_size(&body);
+    if measured > limit {
         println!(
-            "NOTE: {} bytes exceeds the {} byte chunk limit — splitting is not implemented yet",
+            "NOTE: {} bytes ({} as the reference measures it) exceeds the {} byte chunk limit \
+             — splitting is not implemented yet",
             body.len(),
+            measured,
             limit
         );
     }
