@@ -250,19 +250,29 @@ fn the_code_length_follows_the_turnover_band() {
     assert!(validate(spec, &[six], &ctx(6, 2025, false)).is_clean());
 }
 
+/// A line stating no tax at all is ACCEPTED.
+///
+/// The reference looks like it requires either integrated tax or the
+/// central/state pair — it computes isITAmt/isCTAmt/isSTUTAmt for exactly that
+/// — but the flags never reach a decision: `validatePattern`'s mandatory branch
+/// is `isMandatory ? true : true`, and each tax cell is passed through
+/// `Math.abs(cnvt2Nm(...))`, which turns a blank into the number 0. Zero clears
+/// the emptiness guard and matches the numeric pattern, so the row passes.
+///
+/// This matters well beyond fidelity: a nil-rated or exempt HSN line genuinely
+/// carries no tax, and rejecting it would block a return the portal accepts.
 #[test]
-fn tax_must_be_stated_one_way_or_the_other() {
+fn a_line_with_no_tax_at_all_is_accepted() {
     let spec = section("hsn(b2b)");
-    // Neither integrated nor the central/state pair.
-    let none = hsn_row(
+    let zero_rated = hsn_row(
         5,
         [
             "0101",
             "Live horses",
             "NOS-NUMBERS",
             "10",
-            "118000",
-            "18",
+            "100000",
+            "0",
             "100000",
             "",
             "",
@@ -270,16 +280,13 @@ fn tax_must_be_stated_one_way_or_the_other() {
             "",
         ],
     );
-    let report = validate(spec, &[none], &ctx(6, 2025, false));
-    assert!(
-        report
-            .errors()
-            .any(|f| f.rule.as_deref() == Some("hsn(b2b).tax_must_be_stated")),
-        "{:?}",
-        report.findings
-    );
+    let report = validate(spec, &[zero_rated], &ctx(6, 2025, false));
+    assert!(report.is_clean(), "{:?}", report.findings);
+}
 
-    // Central and state together are accepted in place of integrated.
+#[test]
+fn central_and_state_together_stand_in_for_integrated_tax() {
+    let spec = section("hsn(b2b)");
     let split = hsn_row(
         5,
         [

@@ -20,6 +20,7 @@ pub fn ctx(month: u32, year: i32) -> FilingContext {
         period: ReturnPeriod::new(month, year).expect("test period is valid"),
         is_sez: false,
         aato_over_5cr: false,
+        is_quarterly: false,
     }
 }
 

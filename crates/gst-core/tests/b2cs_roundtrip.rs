@@ -132,17 +132,57 @@ fn an_operator_gstin_is_rejected_on_an_oe_row() {
     );
 }
 
+/// Two rows agreeing on place of supply, rate, e-commerce GSTIN and applicable
+/// percentage COLLAPSE to one, and the later row wins.
+///
+/// The reference splices the newcomer into the earlier row's slot
+/// (offline.js:10705). Nothing is summed, so the earlier row's money is simply
+/// gone — which is why this is reported even though it reproduces the
+/// reference faithfully.
 #[test]
-fn rows_are_never_merged() {
-    // Two identical rows both reach the payload; nothing sums or dedupes them.
-    let out = {
-        let rows = [base(5), base(6)];
-        let report = validate(b2cs(), &rows, &ctx());
-        assert!(report.is_clean(), "{:?}", report.findings);
-        generate(b2cs(), &report.records, &ctx())
-    };
-    assert_eq!(out.envelopes.len(), 2);
+fn rows_sharing_a_collapse_key_keep_only_the_last() {
+    let rows = [
+        with(5, "Taxable Value", "300000"),
+        with(6, "Taxable Value", "111111"),
+    ];
+    let report = validate(b2cs(), &rows, &ctx());
+    assert!(report.is_clean(), "{:?}", report.findings);
+    let out = generate(b2cs(), &report.records, &ctx());
+
+    assert_eq!(out.envelopes.len(), 1, "{:?}", out.to_json());
+    let json = out.to_json();
+    assert!(json.contains("111111"), "{json}");
+    assert!(
+        !json.contains("300000"),
+        "the earlier row is dropped: {json}"
+    );
+
+    // Reproduced, but not silently.
+    assert!(
+        out.findings
+            .iter()
+            .any(|f| f.rule.as_deref() == Some("grouping.record_replaced")),
+        "{:?}",
+        out.findings
+    );
+    // Losing a row is not itself an error — the reference accepts the file.
     assert!(!out.findings.iter().any(|f| f.severity == Severity::Error));
+}
+
+/// The supply type is deliberately absent from the collapse key: the reference
+/// compares place of supply, rate, operator GSTIN and percentage, and nothing
+/// else. Two rows differing only in E versus OE therefore still collapse.
+#[test]
+fn the_supply_type_is_not_part_of_the_collapse_key() {
+    let spec = b2cs();
+    let key_fields: Vec<&str> = spec
+        .grouping
+        .record_key
+        .iter()
+        .map(|p| p.field.as_str())
+        .collect();
+    assert_eq!(key_fields, ["pos", "rt", "etin", "diff_percent"]);
+    assert!(!key_fields.contains(&"typ"));
 }
 
 #[test]

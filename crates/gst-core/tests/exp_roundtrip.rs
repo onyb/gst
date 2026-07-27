@@ -102,10 +102,39 @@ fn an_export_without_payment_zeroes_tax_and_cess() {
 
 #[test]
 fn the_two_export_types_become_two_envelopes() {
-    let json = payload(&[base(5), with(6, "Export Type", "WOPAY")], &ctx());
+    // Distinct invoice numbers: this section identifies a document by its
+    // number alone, so reusing one across both export types is a conflict
+    // rather than two envelopes — see below.
+    let second = with(6, "Export Type", "WOPAY").with_cell("Invoice Number", "EX-002");
+    let json = payload(&[base(5), second], &ctx());
     assert_eq!(json.matches(r#""exp_typ""#).count(), 2, "{json}");
     assert!(json.contains(r#""exp_typ":"WPAY""#), "{json}");
     assert!(json.contains(r#""exp_typ":"WOPAY""#), "{json}");
+}
+
+/// An export has no counterparty column, so the invoice number identifies the
+/// document on its own — across the whole sheet, not within one export type.
+///
+/// The reference's invoice lookup normalises the absent counterparty id to ''
+/// on both sides, so its envelope guard is always satisfied and the match
+/// reduces to the number. It then finds the other fields disagree, reports the
+/// row in multiItmErrData and drops it.
+#[test]
+fn one_invoice_number_cannot_appear_under_both_export_types() {
+    let rows = [base(5), with(6, "Export Type", "WOPAY")];
+    let report = validate(exp(), &rows, &ctx());
+    assert!(report.is_clean(), "{:?}", report.findings);
+
+    let out = generate(exp(), &report.records, &ctx());
+    assert!(
+        out.errors()
+            .any(|f| f.rule.as_deref() == Some("grouping.invoice_number_reused")),
+        "{:?}",
+        out.findings
+    );
+    // The first row still stands; only the contradicting one is dropped.
+    assert_eq!(out.envelopes.len(), 1);
+    assert!(out.to_json().contains(r#""exp_typ":"WPAY""#));
 }
 
 #[test]
