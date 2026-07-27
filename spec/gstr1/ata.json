@@ -28,7 +28,10 @@
       "type": "text",
       "required": true,
       "enum_ref": "../masters/financial-years.json#/years",
-      "description": "Financial year of the period being amended, as 'YYYY-YY'."
+      "description": "Financial year of the period being amended, as 'YYYY-YY'.",
+      "constraints": [
+        "financial_year_not_after_period"
+      ]
     },
     {
       "id": "omonth",
@@ -103,7 +106,7 @@
         "field": "ad_amt",
         "ne": 0
       },
-      "message": "Gross advance must not be zero \u2014 remove the row instead."
+      "message": "Gross advance must not be zero — remove the row instead."
     },
     {
       "id": "ata.cess_sign_follows_the_advance",
@@ -208,7 +211,7 @@
   "notes": [
     {
       "kind": "quirk",
-      "text": "Line items here are BARE: no `num` and no `itm_det` wrapper, so the rate and amounts sit directly on the item object. The amount is `ad_amt`, not `txval` \u2014 these tables carry advances rather than invoice values.",
+      "text": "Line items here are BARE: no `num` and no `itm_det` wrapper, so the rate and amounts sit directly on the item object. The amount is `ad_amt`, not `txval` — these tables carry advances rather than invoice values.",
       "affects": [
         "output.item"
       ]
@@ -222,7 +225,7 @@
     },
     {
       "kind": "quirk",
-      "text": "Unlike the B2C(Large) and export tables, BOTH the central/state and the integrated branch are reachable here. Nothing rejects a place of supply equal to the supplier's own state \u2014 that is precisely the case that produces camt and samt instead of iamt.",
+      "text": "Unlike the B2C(Large) and export tables, BOTH the central/state and the integrated branch are reachable here. Nothing rejects a place of supply equal to the supplier's own state — that is precisely the case that produces camt and samt instead of iamt.",
       "affects": [
         "pos",
         "output.item"
@@ -230,14 +233,14 @@
     },
     {
       "kind": "quirk",
-      "text": "'Applicable % of Tax Rate' is checked against the pattern ^(100|65)$ as a string, so a CSV carrying '65.00' fails while an Excel cell holding the number 65 passes, because the numeric cell stringifies to '65'. GSTN's own sample CSV for these tables writes 65.00 and would be rejected on that path. This implementation compares numerically, so both forms are accepted \u2014 a deliberate divergence toward the Excel behaviour.",
+      "text": "'Applicable % of Tax Rate' is checked against the pattern ^(100|65)$ as a string, so a CSV carrying '65.00' fails while an Excel cell holding the number 65 passes, because the numeric cell stringifies to '65'. GSTN's own sample CSV for these tables writes 65.00 and would be rejected on that path. This implementation compares numerically, so both forms are accepted — a deliberate divergence toward the Excel behaviour.",
       "affects": [
         "diff_percent"
       ]
     },
     {
       "kind": "quirk",
-      "text": "Validation MUTATES the row before the payload mapping runs: a blank 'Applicable % of Tax Rate' is written as 100. The mapping then sees the key present, so diff_percent becomes 1 \u2014 which the envelope step deletes, leaving no key. The net effect is invisible, but it is the reason a blank cell does not produce diff_percent 0.",
+      "text": "Validation MUTATES the row before the payload mapping runs: a blank 'Applicable % of Tax Rate' is written as 100. The mapping then sees the key present, so diff_percent becomes 1 — which the envelope step deletes, leaving no key. The net effect is invisible, but it is the reason a blank cell does not produce diff_percent 0.",
       "affects": [
         "diff_percent"
       ]
@@ -267,10 +270,17 @@
     },
     {
       "kind": "quirk",
-      "text": "The amended period reaches the payload as a derived value (omon) rather than a column of its own, so the columns it is derived from \u2014 Financial Year and Original Month \u2014 have to be declared as fields that must agree within a group even though neither is emitted. Without that, two rows amending different months for one state would silently merge into whichever month came first.",
+      "text": "The amended period reaches the payload as a derived value (omon) rather than a column of its own, so the columns it is derived from — Financial Year and Original Month — have to be declared as fields that must agree within a group even though neither is emitted. Without that, two rows amending different months for one state would silently merge into whichever month came first.",
       "affects": [
         "fy",
         "omonth"
+      ]
+    },
+    {
+      "kind": "divergence",
+      "text": "The reference validates the financial year against a dropdown it builds at page load with `for (var i = YYYY; i >= 2018; i--)`, truncated to the current calendar month (returns.fct.js:175). That list therefore excludes 2017-18 and excludes anything after today — it is a function of the wall clock, and re-running the same workbook next year gives a different verdict. This engine takes no clock (see upload::filename, which is handed the date), so the reproducible half is enforced instead: the amended year may not be LATER than the year of the period being filed. The 2017-18 floor is NOT enforced, because GSTN's own sample CSVs for these tables are full of 2017-18 rows and rejecting them would fail the reference's own fixtures.",
+      "affects": [
+        "fy"
       ]
     }
   ]

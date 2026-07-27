@@ -104,7 +104,7 @@
       "required": false,
       "constraints": [
         "pos_code_range",
-        "pos_differs_from_supplier_state"
+        "pos_differs_from_supplier_state_even_for_sez"
       ],
       "transform": "state_code_prefix",
       "description": "Place of supply as 'NN-Name'; only the numeric prefix is retained. Required for a B2CL note and forbidden for an export note, so it is declared optional here and gated by rules. When present it must differ from the supplier's own state."
@@ -153,7 +153,7 @@
         {
           "name": "min_exclusive",
           "value": 0,
-          "description": "Must be strictly positive \u2014 a zero taxable value is rejected."
+          "description": "Must be strictly positive — a zero taxable value is rejected."
         }
       ],
       "description": "Corrected taxable value at this rate, excluding tax. Strictly positive.",
@@ -312,13 +312,13 @@
     ],
     "derivation_notes": {
       "gstr1.item_num": "Line item number is derived from the rate, not a sequence: num = rt * 100 + 1.",
-      "gstr1.tax_split_unregistered": "Always inter-state \u2014 the reference emits no camt/samt branch for unregistered notes at all. iamt = round(txval * rt * 0.01 * diff_percent, 2), forced to 0 when UR Type is EXPWOP (an export without payment of tax). csamt = round(Cess Amount, 2), also forced to 0 for EXPWOP, and 0 when blank."
+      "gstr1.tax_split_unregistered": "Always inter-state — the reference emits no camt/samt branch for unregistered notes at all. iamt = round(txval * rt * 0.01 * diff_percent, 2), forced to 0 when UR Type is EXPWOP (an export without payment of tax). csamt = round(Cess Amount, 2), also forced to 0 for EXPWOP, and 0 when blank."
     }
   },
   "notes": [
     {
       "kind": "quirk",
-      "text": "Tax is ALWAYS integrated here. The reference's item mapping for unregistered notes has no central/state branch whatsoever \u2014 not merely an unreachable one, as in B2C(Large), but no code path at all. camt and samt are therefore absent from the payload mapping.",
+      "text": "Tax is ALWAYS integrated here. The reference's item mapping for unregistered notes has no central/state branch whatsoever — not merely an unreachable one, as in B2C(Large), but no code path at all. camt and samt are therefore absent from the payload mapping.",
       "affects": [
         "output.item"
       ]
@@ -341,7 +341,7 @@
     },
     {
       "kind": "quirk",
-      "text": "Records sit at the top level of the payload while still carrying line items \u2014 there is no envelope object, because there is no registered counterparty to group by.",
+      "text": "Records sit at the top level of the payload while still carrying line items — there is no envelope object, because there is no registered counterparty to group by.",
       "affects": [
         "output.invoice"
       ]
@@ -373,7 +373,7 @@
     },
     {
       "kind": "quirk",
-      "text": "Nothing requires the revised note to postdate the original \u2014 the date-ordering routine is unreachable. GSTN's sample CSV gives a note value of 0, which passes the non-negative check.",
+      "text": "Nothing requires the revised note to postdate the original — the date-ordering routine is unreachable. GSTN's sample CSV gives a note value of 0, which passes the non-negative check.",
       "affects": [
         "ont_dt",
         "nt_dt",
@@ -382,9 +382,16 @@
     },
     {
       "kind": "quirk",
-      "text": "The internal 'diffval' flag never reaches the upload JSON \u2014 the reference deletes it alongside the tax-rate factor. This resolves what was previously an open question. Verified against a file captured from the tool.",
+      "text": "The internal 'diffval' flag never reaches the upload JSON — the reference deletes it alongside the tax-rate factor. This resolves what was previously an open question. Verified against a file captured from the tool.",
       "affects": [
         "output"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "The SEZ carve-out that exempts B2C(Large) from the place-of-supply check does NOT extend here. The reference writes it as an explicit `(iSecID == 'b2cl' || 'b2cla') && !isSEZ` guard (returnStructure.js:8808) and calls validatePOSWithSupStCode unconditionally for these two sections (:5674, :5742), with no isSEZ anywhere in that function. An SEZ filer's note to an unregistered person in its own state is therefore rejected.",
+      "affects": [
+        "pos"
       ]
     }
   ]

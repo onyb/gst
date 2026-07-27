@@ -31,7 +31,7 @@
       "enum": [
         "OE"
       ],
-      "description": "Supply channel. Only 'OE' (other than e-commerce) is accepted on import, even though the template's dropdown also offers 'E' \u2014 see the note on the unreachable e-commerce branch."
+      "description": "Supply channel. Only 'OE' (other than e-commerce) is accepted on import, even though the template's dropdown also offers 'E' — see the note on the unreachable e-commerce branch."
     },
     {
       "id": "pos",
@@ -43,7 +43,7 @@
         "pos_code_range"
       ],
       "transform": "state_code_prefix",
-      "description": "Place of supply as 'NN-Name'; only the numeric prefix is retained. Unlike B2C(Large), the supplier's own state IS allowed here \u2014 that is what makes a row intra-state."
+      "description": "Place of supply as 'NN-Name'; only the numeric prefix is retained. Unlike B2C(Large), the supplier's own state IS allowed here — that is what makes a row intra-state."
     },
     {
       "id": "diff_percent",
@@ -57,7 +57,7 @@
         65
       ],
       "transform": "percent_to_factor",
-      "description": "Proportion of the tax rate that applies. Emitted as a factor, and dropped entirely when it is 1 \u2014 only a 65% row carries the key."
+      "description": "Proportion of the tax rate that applies. Emitted as a factor, and dropped entirely when it is 1 — only a 65% row carries the key."
     },
     {
       "id": "rt",
@@ -75,7 +75,7 @@
       "type": "decimal",
       "required": true,
       "pattern": "^(-?(\\d{0,11})(\\.\\d{0,2})?)$",
-      "description": "Total taxable value of small supplies at this rate, excluding tax. MAY BE NEGATIVE \u2014 this is the only section so far that permits it, so a net downward adjustment can be reported without a credit note.",
+      "description": "Total taxable value of small supplies at this rate, excluding tax. MAY BE NEGATIVE — this is the only section so far that permits it, so a net downward adjustment can be reported without a credit note.",
       "round_to": 2
     },
     {
@@ -113,7 +113,15 @@
       "message": "E-Commerce GSTIN must be blank: import accepts only Type 'OE', and an 'OE' row carries no operator GSTIN."
     }
   ],
-  "grouping": {},
+  "grouping": {
+    "record_key": [
+      "pos",
+      "rt",
+      "etin",
+      "diff_percent"
+    ],
+    "record_conflict": "last_wins"
+  },
   "output": {
     "record": {
       "keys": [
@@ -188,7 +196,7 @@
   "notes": [
     {
       "kind": "quirk",
-      "text": "The e-commerce branch of this section is unreachable. Import requires Type to match exactly 'OE', yet the operator-GSTIN requirement is guarded by Type being 'E' \u2014 both conditions are combined with AND, so an 'E' row always fails the Type check before its operator GSTIN is ever considered. The template's dropdown offers both values and GSTN's own sample CSV uses 'E' on two of three rows, all of which import rejects. Consequence: Type is always 'OE' and the operator GSTIN is always blank.",
+      "text": "The e-commerce branch of this section is unreachable. Import requires Type to match exactly 'OE', yet the operator-GSTIN requirement is guarded by Type being 'E' — both conditions are combined with AND, so an 'E' row always fails the Type check before its operator GSTIN is ever considered. The template's dropdown offers both values and GSTN's own sample CSV uses 'E' on two of three rows, all of which import rejects. Consequence: Type is always 'OE' and the operator GSTIN is always blank.",
       "affects": [
         "typ",
         "etin"
@@ -196,7 +204,7 @@
     },
     {
       "kind": "quirk",
-      "text": "The Excel template and the section CSV disagree on column order: the sheet is Type, Place Of Supply, Applicable % of Tax Rate, Rate, ... while the CSV is Type, Place Of Supply, Rate, Applicable % of Tax Rate, ... \u2014 columns three and four are swapped. The `order` recorded here follows the Excel template. Import matches on header text rather than position, so both files read correctly regardless.",
+      "text": "The Excel template and the section CSV disagree on column order: the sheet is Type, Place Of Supply, Applicable % of Tax Rate, Rate, ... while the CSV is Type, Place Of Supply, Rate, Applicable % of Tax Rate, ... — columns three and four are swapped. The `order` recorded here follows the Excel template. Import matches on header text rather than position, so both files read correctly regardless.",
       "affects": [
         "diff_percent",
         "rt"
@@ -219,7 +227,7 @@
     },
     {
       "kind": "quirk",
-      "text": "The reference drops diff_percent from the payload whenever it equals 1, so an unscaled row simply has no such key. It also drops the operator GSTIN when empty, which \u2014 given the unreachable e-commerce branch \u2014 means always.",
+      "text": "The reference drops diff_percent from the payload whenever it equals 1, so an unscaled row simply has no such key. It also drops the operator GSTIN when empty, which — given the unreachable e-commerce branch — means always.",
       "affects": [
         "diff_percent",
         "etin"
@@ -227,16 +235,23 @@
     },
     {
       "kind": "quirk",
-      "text": "Rows are never merged. The reference looks for an existing record with the same place of supply and tax-rate factor and, on finding one, requires the Type to agree \u2014 but since Type can only ever be 'OE', that check cannot fail for any row that passed field validation. Two identical rows therefore both reach the payload as separate objects.",
+      "text": "Rows are never merged. The reference looks for an existing record with the same place of supply and tax-rate factor and, on finding one, requires the Type to agree — but since Type can only ever be 'OE', that check cannot fail for any row that passed field validation. Two identical rows therefore both reach the payload as separate objects.",
       "affects": [
         "output.record"
       ]
     },
     {
       "kind": "quirk",
-      "text": "The internal 'diffval' flag never reaches the upload JSON \u2014 the reference deletes it alongside the tax-rate factor. This resolves what was previously an open question. Verified against a file captured from the tool.",
+      "text": "The internal 'diffval' flag never reaches the upload JSON — the reference deletes it alongside the tax-rate factor. This resolves what was previously an open question. Verified against a file captured from the tool.",
       "affects": [
         "output"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "Rows sharing (pos, rt, etin, diff_percent) are COLLAPSED, not summed: offline.js:10705 — matched on place of supply, rate, e-commerce GSTIN and applicable percentage, then spliced in place so the later row wins. Note the supply type (E/OE) is NOT part of the key. Nothing about the sheet hints at this — the reference does it in addmltpldata on the way into its working file, not in the row mapping — so two legitimate-looking rows quietly become one. Reproduced, and reported as grouping.record_replaced.",
+      "affects": [
+        "output.record"
       ]
     }
   ]

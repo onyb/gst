@@ -119,7 +119,7 @@
       "type": "date",
       "required": false,
       "constraints": [
-        "date_within_return_window"
+        "date_not_before_gst"
       ],
       "transform": "date_normalize",
       "description": "Shipping bill date."
@@ -195,7 +195,8 @@
       "rt"
     ],
     "item_conflict": "last_wins",
-    "invoice_field_conflict": "error"
+    "invoice_field_conflict": "error",
+    "invoice_key_global": true
   },
   "output": {
     "envelope": {
@@ -296,7 +297,7 @@
     },
     {
       "kind": "quirk",
-      "text": "The payload groups by EXPORT TYPE, not by counterparty or place of supply \u2014 one envelope for WPAY and one for WOPAY, each holding its invoices. There is no recipient at all: exports are to persons outside India.",
+      "text": "The payload groups by EXPORT TYPE, not by counterparty or place of supply — one envelope for WPAY and one for WOPAY, each holding its invoices. There is no recipient at all: exports are to persons outside India.",
       "affects": [
         "exp_typ",
         "output.envelope"
@@ -320,14 +321,14 @@
     },
     {
       "kind": "quirk",
-      "text": "Port Code is optional and, unusually, permits any alphanumeric string of up to six characters \u2014 it is not checked against a list of real ports.",
+      "text": "Port Code is optional and, unusually, permits any alphanumeric string of up to six characters — it is not checked against a list of real ports.",
       "affects": [
         "sbpcode"
       ]
     },
     {
       "kind": "quirk",
-      "text": "The template has no 'Applicable % of Tax Rate' column, yet the reference's validation writes a default of 100 into the row before mapping it, which makes the key exist and sets diff_percent to 1. Since only 0.65 survives into the upload file, the effect is invisible \u2014 no such key is ever emitted. No field is declared here for that reason.",
+      "text": "The template has no 'Applicable % of Tax Rate' column, yet the reference's validation writes a default of 100 into the row before mapping it, which makes the key exist and sets diff_percent to 1. Since only 0.65 survives into the upload file, the effect is invisible — no such key is ever emitted. No field is declared here for that reason.",
       "affects": [
         "output.invoice"
       ]
@@ -349,7 +350,7 @@
     },
     {
       "kind": "quirk",
-      "text": "Nothing requires the revised invoice to postdate the original, nor the shipping bill date to follow the invoice date \u2014 the routine that looks like it enforces the latter returns before checking anything.",
+      "text": "Nothing requires the revised invoice to postdate the original, nor the shipping bill date to follow the invoice date — the routine that looks like it enforces the latter returns before checking anything.",
       "affects": [
         "oidt",
         "idt",
@@ -358,9 +359,23 @@
     },
     {
       "kind": "divergence",
-      "text": "Cess Amount is not validated at all in this section \u2014 the reference's field checks for exports cover the export type, invoice details, port, shipping bill, rate and taxable value, but never the cess. A negative cess is therefore accepted and reaches the payload as a negative csamt. This implementation applies the unsigned amount pattern instead, since a negative cess on an export is not a thing the portal should be asked to accept. Confirmed by differential test against the tool.",
+      "text": "Cess Amount is not validated at all in this section — the reference's field checks for exports cover the export type, invoice details, port, shipping bill, rate and taxable value, but never the cess. A negative cess is therefore accepted and reaches the payload as a negative csamt. This implementation applies the unsigned amount pattern instead, since a negative cess on an export is not a thing the portal should be asked to accept. Confirmed by differential test against the tool.",
       "affects": [
         "csamt"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "This section has no counterparty column, so the reference's invoice lookup matches on the document number ALONE — across the whole sheet, not within one envelope. Its comparison normalises the absent counterparty id to '' on both sides (returnStructure.js:8536), so the guard that would otherwise separate envelopes is always satisfied. The same number under two different envelope keys is therefore one document with contradictory details: the reference reports it in multiItmErrData and drops the row.",
+      "affects": [
+        "grouping.invoice_key"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "The shipping bill date is the ONE date in the return with no upper bound. The reference calls validateDate(..., true) for it — the third argument is allowFuture — so only the 1 July 2017 floor applies (returnStructure.js:8065, :9125). A bill raised after the invoice's own return period has closed is the normal case for an export, not an error.",
+      "affects": [
+        "sbdt"
       ]
     }
   ]

@@ -57,7 +57,7 @@
         "pos_differs_from_supplier_state"
       ],
       "transform": "state_code_prefix",
-      "description": "Place of supply as originally reported, given as 'NN-Name'; only the numeric prefix is retained. There is no revised counterpart \u2014 this table cannot amend the place of supply, and the original value is both the grouping key and the input to the tax split."
+      "description": "Place of supply as originally reported, given as 'NN-Name'; only the numeric prefix is retained. There is no revised counterpart — this table cannot amend the place of supply, and the original value is both the grouping key and the input to the tax split."
     },
     {
       "id": "inum",
@@ -105,7 +105,8 @@
           "description": "From August 2024 the threshold dropped to 1,00,000."
         }
       ],
-      "description": "Corrected total invoice value including tax. The same period-dependent threshold as the unamended section applies, judged against the period being filed rather than the period the original invoice belonged to."
+      "description": "Corrected total invoice value including tax. The same period-dependent threshold as the unamended section applies, judged against the period being filed rather than the period the original invoice belonged to.",
+      "round_to": 2
     },
     {
       "id": "diff_percent",
@@ -147,7 +148,7 @@
       "type": "decimal",
       "required": false,
       "pattern": "^(\\d{0,11})(\\.\\d{0,2})?$",
-      "description": "Cess payable on this line. A blank cell produces no csamt key in the payload rather than a zero \u2014 see the quirk note.",
+      "description": "Cess payable on this line. A blank cell produces no csamt key in the payload rather than a zero — see the quirk note.",
       "round_to": 2
     },
     {
@@ -186,7 +187,8 @@
       "rt"
     ],
     "item_conflict": "last_wins",
-    "invoice_field_conflict": "error"
+    "invoice_field_conflict": "error",
+    "invoice_key_global": true
   },
   "output": {
     "envelope": {
@@ -262,13 +264,13 @@
         {
           "key": "itm_det.iamt",
           "from": "derive:gstr1.tax_split",
-          "description": "Integrated tax. Always present \u2014 this section is inter-state by definition, so no central/state split can arise."
+          "description": "Integrated tax. Always present — this section is inter-state by definition, so no central/state split can arise."
         },
         {
           "key": "itm_det.csamt",
           "from": "derive:gstr1.cess_unguarded",
           "omit_when_empty": true,
-          "description": "Cess. Absent entirely when the source cell is blank \u2014 see the quirk note."
+          "description": "Cess. Absent entirely when the source cell is blank — see the quirk note."
         }
       ]
     },
@@ -286,7 +288,7 @@
   "notes": [
     {
       "kind": "quirk",
-      "text": "This table has no revised place of supply. The reference's own label set defines one, but the template does not offer the column, so an incorrectly reported place of supply cannot be fixed here \u2014 the original value is carried through as the payload's pos and drives the tax split.",
+      "text": "This table has no revised place of supply. The reference's own label set defines one, but the template does not offer the column, so an incorrectly reported place of supply cannot be fixed here — the original value is carried through as the payload's pos and drives the tax split.",
       "affects": [
         "pos"
       ]
@@ -331,16 +333,23 @@
     },
     {
       "kind": "quirk",
-      "text": "The internal 'diffval' flag never reaches the upload JSON \u2014 the reference deletes it alongside the tax-rate factor. This resolves what was previously an open question. Verified against a file captured from the tool.",
+      "text": "The internal 'diffval' flag never reaches the upload JSON — the reference deletes it alongside the tax-rate factor. This resolves what was previously an open question. Verified against a file captured from the tool.",
       "affects": [
         "output"
       ]
     },
     {
       "kind": "quirk",
-      "text": "A blank Cess Amount yields no csamt key at all. The reference computes cess for this section without the empty-cell guard it uses in the B2B tables, so a blank cell becomes NaN, the working file records it as null, and the upload step's omit-empty drops the key. An explicit 0 in the cell is a real zero and is emitted. This was previously recorded as a deliberate divergence emitting 0; a file captured from the tool showed that was wrong, and that these two tables are the only ones lacking the guard \u2014 every other section emits 0 for a blank cell.",
+      "text": "A blank Cess Amount yields no csamt key at all. The reference computes cess for this section without the empty-cell guard it uses in the B2B tables, so a blank cell becomes NaN, the working file records it as null, and the upload step's omit-empty drops the key. An explicit 0 in the cell is a real zero and is emitted. This was previously recorded as a deliberate divergence emitting 0; a file captured from the tool showed that was wrong, and that these two tables are the only ones lacking the guard — every other section emits 0 for a blank cell.",
       "affects": [
         "csamt"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "This section has no counterparty column, so the reference's invoice lookup matches on the document number ALONE — across the whole sheet, not within one envelope. Its comparison normalises the absent counterparty id to '' on both sides (returnStructure.js:8536), so the guard that would otherwise separate envelopes is always satisfied. The same number under two different envelope keys is therefore one document with contradictory details: the reference reports it in multiItmErrData and drops the row.",
+      "affects": [
+        "grouping.invoice_key"
       ]
     }
   ]

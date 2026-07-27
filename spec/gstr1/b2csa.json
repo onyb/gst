@@ -28,7 +28,10 @@
       "type": "text",
       "required": true,
       "enum_ref": "../masters/financial-years.json#/years",
-      "description": "Financial year of the period being amended, as 'YYYY-YY'. Needed alongside the month because Indian financial years run April to March, so a month name alone does not identify a calendar year."
+      "description": "Financial year of the period being amended, as 'YYYY-YY'. Needed alongside the month because Indian financial years run April to March, so a month name alone does not identify a calendar year.",
+      "constraints": [
+        "financial_year_not_after_period"
+      ]
     },
     {
       "id": "omonth",
@@ -60,7 +63,7 @@
       "enum": [
         "OE"
       ],
-      "description": "Supply channel. Only 'OE' is accepted on import, though the template's dropdown also offers 'E' \u2014 the same unreachable e-commerce branch as the unamended section."
+      "description": "Supply channel. Only 'OE' is accepted on import, though the template's dropdown also offers 'E' — the same unreachable e-commerce branch as the unamended section."
     },
     {
       "id": "diff_percent",
@@ -233,7 +236,7 @@
   "notes": [
     {
       "kind": "quirk",
-      "text": "Records sit at the TOP LEVEL of the payload but still carry line items \u2014 there is no envelope object above them. That makes this section's shape different from both the nested invoice sections and the flat unamended B2C(Small) table, which has no items at all.",
+      "text": "Records sit at the TOP LEVEL of the payload but still carry line items — there is no envelope object above them. That makes this section's shape different from both the nested invoice sections and the flat unamended B2C(Small) table, which has no items at all.",
       "affects": [
         "output.invoice"
       ]
@@ -247,7 +250,7 @@
     },
     {
       "kind": "quirk",
-      "text": "The period being amended is identified by a spelled-out month plus a financial year rather than a date, and the month must be UPPERCASE \u2014 the reference's month pattern is case-sensitive even though its own period lookup compares case-insensitively.",
+      "text": "The period being amended is identified by a spelled-out month plus a financial year rather than a date, and the month must be UPPERCASE — the reference's month pattern is case-sensitive even though its own period lookup compares case-insensitively.",
       "affects": [
         "fy",
         "omonth"
@@ -263,7 +266,7 @@
     },
     {
       "kind": "quirk",
-      "text": "The Excel template and the section CSV disagree on column order: the sheet is ... Type, Applicable % of Tax Rate, Rate, ... while the CSV is ... Type, Rate, Applicable % of Tax Rate, ... \u2014 the same swap as the unamended section. `order` here follows the Excel template; import matches on header text so both read correctly.",
+      "text": "The Excel template and the section CSV disagree on column order: the sheet is ... Type, Applicable % of Tax Rate, Rate, ... while the CSV is ... Type, Rate, Applicable % of Tax Rate, ... — the same swap as the unamended section. `order` here follows the Excel template; import matches on header text so both read correctly.",
       "affects": [
         "diff_percent",
         "rt"
@@ -279,9 +282,16 @@
     },
     {
       "kind": "quirk",
-      "text": "The internal 'diffval' flag never reaches the upload JSON \u2014 the reference deletes it alongside the tax-rate factor. This resolves what was previously an open question. Verified against a file captured from the tool.",
+      "text": "The internal 'diffval' flag never reaches the upload JSON — the reference deletes it alongside the tax-rate factor. This resolves what was previously an open question. Verified against a file captured from the tool.",
       "affects": [
         "output"
+      ]
+    },
+    {
+      "kind": "divergence",
+      "text": "The reference validates the financial year against a dropdown it builds at page load with `for (var i = YYYY; i >= 2018; i--)`, truncated to the current calendar month (returns.fct.js:175). That list therefore excludes 2017-18 and excludes anything after today — it is a function of the wall clock, and re-running the same workbook next year gives a different verdict. This engine takes no clock (see upload::filename, which is handed the date), so the reproducible half is enforced instead: the amended year may not be LATER than the year of the period being filed. The 2017-18 floor is NOT enforced, because GSTN's own sample CSVs for these tables are full of 2017-18 rows and rejecting them would fail the reference's own fixtures.",
+      "affects": [
+        "fy"
       ]
     }
   ]
