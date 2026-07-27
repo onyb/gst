@@ -5,8 +5,15 @@
   "description": "Meta-schema for per-section spec files (spec/gstr1/*.json, spec/gstr3b/*.json). A section spec describes one table of a return: where its rows come from (Excel sheet / CSV), what each column means and must satisfy, cross-field rules, how rows group into records, and how records map onto the portal upload payload.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["section", "return", "title", "source", "fields", "grouping", "output"],
-
+  "required": [
+    "section",
+    "return",
+    "title",
+    "source",
+    "fields",
+    "grouping",
+    "output"
+  ],
   "properties": {
     "$schema": {
       "description": "Relative path back to this meta-schema, so editors validate section specs as they are written.",
@@ -19,7 +26,10 @@
     },
     "return": {
       "description": "Return this section belongs to.",
-      "enum": ["gstr1", "gstr3b"]
+      "enum": [
+        "gstr1",
+        "gstr3b"
+      ]
     },
     "title": {
       "description": "Human-readable section name, including the statutory table numbers it feeds.",
@@ -30,9 +40,15 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "offline_tool": { "type": "string" },
-        "excel_template": { "type": "string" },
-        "csv_template": { "type": "string" },
+        "offline_tool": {
+          "type": "string"
+        },
+        "excel_template": {
+          "type": "string"
+        },
+        "csv_template": {
+          "type": "string"
+        },
         "verified_on": {
           "description": "ISO date the spec was last checked against the artifacts above.",
           "type": "string",
@@ -40,7 +56,6 @@
         }
       }
     },
-
     "source": {
       "description": "Where rows are read from. A section may be importable from an Excel sheet, a section CSV, or both.",
       "type": "object",
@@ -50,7 +65,11 @@
         "excel": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["sheet", "header_row", "first_data_row"],
+          "required": [
+            "sheet",
+            "header_row",
+            "first_data_row"
+          ],
           "properties": {
             "sheet": {
               "description": "Worksheet name, matched exactly (names contain commas, e.g. 'b2b,sez,de').",
@@ -76,31 +95,38 @@
         "csv": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["file", "header_row"],
+          "required": [
+            "file",
+            "header_row"
+          ],
           "properties": {
             "file": {
               "description": "Filename in the official section-wise CSV set.",
               "type": "string"
             },
-            "header_row": { "type": "integer", "minimum": 1 }
+            "header_row": {
+              "type": "integer",
+              "minimum": 1
+            }
           }
         }
       }
     },
-
     "fields": {
       "description": "Column definitions in template order. `order` is the 0-based column position; both Excel and CSV use the same order unless a field overrides it.",
       "type": "array",
       "minItems": 1,
-      "items": { "$ref": "#/$defs/field" }
+      "items": {
+        "$ref": "#/$defs/field"
+      }
     },
-
     "rules": {
       "description": "Cross-field rules, evaluated per row after field-level validation passes. Each is a `when` predicate (omitted = always) implying an `assert` predicate.",
       "type": "array",
-      "items": { "$ref": "#/$defs/rule" }
+      "items": {
+        "$ref": "#/$defs/rule"
+      }
     },
-
     "grouping": {
       "description": "How validated rows collapse into records. Sections are row-per-tax-rate: several rows sharing an invoice key become one invoice with several line items.",
       "type": "object",
@@ -109,13 +135,17 @@
         "envelope_key": {
           "description": "Field ids that group invoices into an outer payload object (e.g. one object per recipient GSTIN). Absent for flat sections.",
           "type": "array",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         },
         "invoice_key": {
           "description": "Field ids identifying one invoice/document within an envelope. Omitted by flat sections, which have no invoice level — every validated row becomes its own payload object.",
           "type": "array",
           "minItems": 1,
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         },
         "invoice_key_case_insensitive": {
           "description": "Whether invoice-key comparison folds case. The official tool lowercases document numbers before matching.",
@@ -125,31 +155,98 @@
         "item_key": {
           "description": "Field ids identifying one line item within an invoice. Absent for sections with no item level.",
           "type": "array",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         },
         "item_conflict": {
           "description": "What happens when two rows share both an invoice key and an item key. `last_wins`: the later row silently replaces the earlier one (no summing, no error).",
-          "enum": ["last_wins", "sum", "error"]
+          "enum": [
+            "last_wins",
+            "sum",
+            "error",
+            "append"
+          ]
         },
         "agree_fields": {
           "description": "Extra field ids that rows grouped together must agree on, beyond those the payload carries. Agreement and emission are separate concerns: the reference compares the recipient's name when matching rows to a note, yet strips that name before writing the upload file.",
           "type": "array",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         },
         "invoice_field_conflict": {
           "description": "What happens when rows sharing an invoice key disagree on an invoice-level field. `error`: the whole invoice is rejected.",
-          "enum": ["error", "first_wins"]
+          "enum": [
+            "error",
+            "first_wins"
+          ]
+        },
+        "record_key": {
+          "type": "array",
+          "description": "Flat sections only. The key rows are COLLAPSED on before they become payload records — the reference does this on the way into its working file, not in its row mapping. Empty means every row is its own record. Nothing is summed.",
+          "items": {
+            "oneOf": [
+              {
+                "type": "string",
+                "description": "Field id, applicable to every period."
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "field"
+                ],
+                "properties": {
+                  "field": {
+                    "type": "string"
+                  },
+                  "from_period": {
+                    "type": "string",
+                    "pattern": "^(0[1-9]|1[0-2])[0-9]{4}$",
+                    "description": "Return period as MMYYYY."
+                  },
+                  "until_period": {
+                    "type": "string",
+                    "pattern": "^(0[1-9]|1[0-2])[0-9]{4}$",
+                    "description": "Return period as MMYYYY."
+                  },
+                  "description": {
+                    "type": "string"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "record_conflict": {
+          "enum": [
+            "last_wins",
+            "first_wins"
+          ],
+          "description": "Which of two rows sharing a `record_key` survives. `last_wins` replaces in place, keeping the earlier row's position and therefore its serial number."
+        },
+        "invoice_key_global": {
+          "type": "boolean",
+          "description": "Match an invoice number across the whole section rather than within its envelope. Sections with no counterparty column do this in the reference, because the absent id normalises to '' on both sides of its comparison."
         }
       }
     },
-
     "output": {
       "description": "Mapping onto the portal upload payload. A section is either nested (`envelope` + `invoice`, optionally `item`) or flat (`record` alone): flat sections emit one object per validated row, with tax computed on the row itself rather than in a line item.",
       "type": "object",
       "additionalProperties": false,
       "anyOf": [
-        { "required": ["record"] },
-        { "required": ["invoice"] }
+        {
+          "required": [
+            "record"
+          ]
+        },
+        {
+          "required": [
+            "invoice"
+          ]
+        }
       ],
       "properties": {
         "record": {
@@ -160,33 +257,79 @@
           "description": "Outer grouping object, e.g. one per recipient or place of supply. Omit it for a section whose records sit at the top level of the payload but still carry line items.",
           "$ref": "#/$defs/payload_object"
         },
-        "invoice": { "$ref": "#/$defs/payload_object" },
-        "item": { "$ref": "#/$defs/payload_object" },
+        "invoice": {
+          "$ref": "#/$defs/payload_object"
+        },
+        "item": {
+          "$ref": "#/$defs/payload_object"
+        },
         "derivations": {
           "description": "Named computations the engine implements, referenced by payload keys whose value is computed rather than mapped. Documented in `derivation_notes`.",
           "type": "array",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         },
         "derivation_notes": {
           "description": "Prose + formula for each derivation named above, keyed by derivation name.",
           "type": "object",
-          "additionalProperties": { "type": "string" }
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "member_from": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "map"
+          ],
+          "description": "For a sheet whose rows are split across several members of one payload object — the e-commerce summary sends each row to clttx or paytx by its nature of supply. The selecting field never appears in the payload.",
+          "properties": {
+            "field": {
+              "type": "string",
+              "description": "Field id whose value selects the member."
+            },
+            "map": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "Field value to member name."
+            }
+          }
         }
       }
     },
-
     "notes": {
       "description": "Free-form observations: quirks of the reference behavior, open questions, deliberate divergences.",
       "type": "array",
-      "items": { "$ref": "#/$defs/note" }
+      "items": {
+        "$ref": "#/$defs/note"
+      }
+    },
+    "active_from_period": {
+      "type": "string",
+      "pattern": "^(0[1-9]|1[0-2])[0-9]{4}$",
+      "description": "First return period this section is filed for, inclusive. Absent means every period. A sheet outside its window is not read: its records would have nowhere to go in the upload file."
+    },
+    "active_until_period": {
+      "type": "string",
+      "pattern": "^(0[1-9]|1[0-2])[0-9]{4}$",
+      "description": "First return period this section is NO LONGER filed for, exclusive."
     }
   },
-
   "$defs": {
     "field": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "column", "order", "type", "required"],
+      "required": [
+        "id",
+        "column",
+        "order",
+        "type",
+        "required"
+      ],
       "properties": {
         "id": {
           "description": "Stable internal identifier, matching the portal payload key where one exists.",
@@ -204,7 +347,13 @@
         },
         "type": {
           "description": "Value domain, independent of which values are allowed — restrict those with `enum` or `enum_ref`. `decimal` values are exact (never binary floating point) and are emitted as JSON numbers; `text` is emitted as a string. `state_code` is a 'NN-Name' cell reduced to its numeric prefix.",
-          "enum": ["text", "decimal", "date", "gstin", "state_code"]
+          "enum": [
+            "text",
+            "decimal",
+            "date",
+            "gstin",
+            "state_code"
+          ]
         },
         "required": {
           "description": "Whether the cell must be non-empty. A field with a `default` is satisfied when empty, by taking that default.",
@@ -221,7 +370,15 @@
         "accepts": {
           "description": "For `gstin` fields: which registration-number forms are accepted, most-specific first.",
           "type": "array",
-          "items": { "enum": ["gstin", "uin", "tds", "nrtp", "eco"] }
+          "items": {
+            "enum": [
+              "gstin",
+              "uin",
+              "tds",
+              "nrtp",
+              "eco"
+            ]
+          }
         },
         "enum_ref": {
           "description": "Pointer to a masters file supplying the allowed values, as 'file#/json/pointer'.",
@@ -236,19 +393,28 @@
           "type": "integer",
           "minimum": 0
         },
-        "max_length": { "type": "integer", "minimum": 1 },
+        "max_length": {
+          "type": "integer",
+          "minimum": 1
+        },
         "constraints": {
           "description": "Named field-level checks beyond pattern/enum, implemented by the engine. A bare string names a check that takes no parameters; the object form carries a parameter and/or limits the check to a range of return periods, so period-dependent rules keep their numbers in the spec rather than in code.",
           "type": "array",
           "items": {
             "oneOf": [
-              { "type": "string" },
+              {
+                "type": "string"
+              },
               {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["name"],
+                "required": [
+                  "name"
+                ],
                 "properties": {
-                  "name": { "type": "string" },
+                  "name": {
+                    "type": "string"
+                  },
                   "value": {
                     "description": "Parameter for checks that compare against a number, e.g. a minimum.",
                     "type": "number"
@@ -263,7 +429,9 @@
                     "type": "string",
                     "pattern": "^(0[1-9]|1[0-2])[0-9]{4}$"
                   },
-                  "description": { "type": "string" }
+                  "description": {
+                    "type": "string"
+                  }
                 }
               }
             ]
@@ -277,21 +445,38 @@
           "description": "The column exists in the template but no value is permitted for this section.",
           "type": "boolean"
         },
-        "description": { "type": "string" }
+        "description": {
+          "type": "string"
+        },
+        "required_from_period": {
+          "type": "string",
+          "pattern": "^(0[1-9]|1[0-2])[0-9]{4}$",
+          "description": "Narrows `required` to periods on or after this one, for a column a section began insisting on at a cutover."
+        },
+        "required_until_period": {
+          "type": "string",
+          "pattern": "^(0[1-9]|1[0-2])[0-9]{4}$",
+          "description": "Narrows `required` to periods before this one."
+        }
       }
     },
-
     "rule": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "assert", "message"],
+      "required": [
+        "id",
+        "assert",
+        "message"
+      ],
       "properties": {
         "id": {
           "description": "Stable rule identifier, namespaced by section (e.g. 'b2b.cbw_requires_rchrg'). Referenced by error reports and tests.",
           "type": "string",
           "pattern": "^[a-z0-9_()]+\\.[a-z0-9_]+$"
         },
-        "description": { "type": "string" },
+        "description": {
+          "type": "string"
+        },
         "when": {
           "description": "Guard predicate. Omitted means the assertion always applies.",
           "$ref": "#/$defs/predicate"
@@ -305,12 +490,14 @@
           "type": "string"
         },
         "severity": {
-          "enum": ["error", "warning"],
+          "enum": [
+            "error",
+            "warning"
+          ],
           "default": "error"
         }
       }
     },
-
     "predicate": {
       "description": "Boolean expression over a row's fields. Exactly one form per object: a leaf comparison on a single field, or a combinator over sub-predicates. Deliberately not an expression language — the engine walks this structure directly.",
       "type": "object",
@@ -322,8 +509,12 @@
           "description": "Field id under test. Required for leaf forms.",
           "type": "string"
         },
-        "eq": { "description": "Field equals this value." },
-        "ne": { "description": "Field does not equal this value." },
+        "eq": {
+          "description": "Field equals this value."
+        },
+        "ne": {
+          "description": "Field does not equal this value."
+        },
         "in": {
           "description": "Field is one of these values.",
           "type": "array"
@@ -343,33 +534,91 @@
         "all": {
           "description": "Conjunction.",
           "type": "array",
-          "items": { "$ref": "#/$defs/predicate" }
+          "items": {
+            "$ref": "#/$defs/predicate"
+          }
         },
         "any": {
           "description": "Disjunction.",
           "type": "array",
-          "items": { "$ref": "#/$defs/predicate" }
+          "items": {
+            "$ref": "#/$defs/predicate"
+          }
         },
-        "not": { "$ref": "#/$defs/predicate" }
+        "not": {
+          "$ref": "#/$defs/predicate"
+        },
+        "eq_field": {
+          "type": "string",
+          "description": "Field id this field must equal numerically."
+        },
+        "matches": {
+          "type": "string",
+          "format": "regex",
+          "description": "Regular expression the field's text must match. For shapes that depend on another cell, which a field-level `pattern` cannot express."
+        }
       },
       "oneOf": [
-        { "required": ["field", "eq"] },
-        { "required": ["field", "ne"] },
-        { "required": ["field", "in"] },
-        { "required": ["field", "empty"] },
-        { "required": ["field", "gte_field"] },
-        { "required": ["field", "sign_agrees_with"] },
-        { "required": ["all"] },
-        { "required": ["any"] },
-        { "required": ["not"] }
+        {
+          "required": [
+            "field",
+            "eq"
+          ]
+        },
+        {
+          "required": [
+            "field",
+            "ne"
+          ]
+        },
+        {
+          "required": [
+            "field",
+            "in"
+          ]
+        },
+        {
+          "required": [
+            "field",
+            "empty"
+          ]
+        },
+        {
+          "required": [
+            "field",
+            "gte_field"
+          ]
+        },
+        {
+          "required": [
+            "field",
+            "sign_agrees_with"
+          ]
+        },
+        {
+          "required": [
+            "all"
+          ]
+        },
+        {
+          "required": [
+            "any"
+          ]
+        },
+        {
+          "required": [
+            "not"
+          ]
+        }
       ]
     },
-
     "payload_object": {
       "description": "One level of the upload JSON. Keys are payload key names; values say where the content comes from.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["keys"],
+      "required": [
+        "keys"
+      ],
       "properties": {
         "keys": {
           "type": "array",
@@ -377,7 +626,10 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["key", "from"],
+            "required": [
+              "key",
+              "from"
+            ],
             "properties": {
               "key": {
                 "description": "Key name in the upload JSON.",
@@ -401,29 +653,53 @@
               },
               "verify": {
                 "description": "Marks a key whose presence or exact form is not yet confirmed. `oracle`: must be settled by differential capture against the official tool before this section is trusted.",
-                "enum": ["oracle"]
+                "enum": [
+                  "oracle"
+                ]
               },
-              "description": { "type": "string" }
+              "description": {
+                "type": "string"
+              },
+              "from_period": {
+                "type": "string",
+                "pattern": "^(0[1-9]|1[0-2])[0-9]{4}$",
+                "description": "Emit this key only for periods on or after this one, for a payload shape that changed at a cutover."
+              },
+              "until_period": {
+                "type": "string",
+                "pattern": "^(0[1-9]|1[0-2])[0-9]{4}$",
+                "description": "Emit this key only for periods before this one."
+              }
             }
           }
         }
       }
     },
-
     "note": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "text"],
+      "required": [
+        "kind",
+        "text"
+      ],
       "properties": {
         "kind": {
           "description": "`quirk`: reference behavior that is surprising but reproduced deliberately. `open_question`: unresolved, needs oracle capture. `divergence`: where this implementation intentionally differs.",
-          "enum": ["quirk", "open_question", "divergence"]
+          "enum": [
+            "quirk",
+            "open_question",
+            "divergence"
+          ]
         },
-        "text": { "type": "string" },
+        "text": {
+          "type": "string"
+        },
         "affects": {
           "description": "Field ids, rule ids, or payload keys this note concerns.",
           "type": "array",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         }
       }
     }

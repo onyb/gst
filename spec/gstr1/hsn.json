@@ -1,0 +1,293 @@
+{
+  "$schema": "../section.schema.json",
+  "section": "hsn",
+  "return": "gstr1",
+  "title": "HSN Summary - 12",
+  "provenance": {
+    "offline_tool": "V3.2.4",
+    "excel_template": "GSTR1_Excel_Workbook_Template_V2.0.xlsx",
+    "csv_template": "Section_wise_CSV_files/GSTR1/hsn.csv",
+    "verified_on": "2026-07-27"
+  },
+  "source": {
+    "excel": {
+      "sheet": "hsn",
+      "header_row": 4,
+      "first_data_row": 5
+    },
+    "csv": {
+      "file": "hsn.csv",
+      "header_row": 1
+    }
+  },
+  "active_until_period": "052025",
+  "fields": [
+    {
+      "id": "hsn_sc",
+      "column": "HSN",
+      "order": 0,
+      "type": "text",
+      "required": true,
+      "pattern": "^[0-9]{2,8}$",
+      "constraints": [
+        {
+          "name": "hsn_length_for_aato",
+          "from_period": "052021",
+          "description": "The turnover-band length rule starts with the 05-2021 period; before it any 2 to 8 digit code is accepted."
+        }
+      ],
+      "description": "HSN code for goods or SAC for services. Unlike the bifurcated tables this one does NOT look the description up, so an unknown code is reportable."
+    },
+    {
+      "id": "desc",
+      "column": "Description",
+      "order": 1,
+      "type": "text",
+      "required": false,
+      "max_length": 30,
+      "pattern": "^[ A-Za-z0-9_@./&-]{0,30}$",
+      "description": "The filer's own description. NOT required: before 05-2021 it is the either/or partner of the code, which is itself required, and from 05-2021 the reference overwrites the cell with the official description before validating it — so a blank cell is never blank by the time anything looks."
+    },
+    {
+      "id": "uqc",
+      "column": "UQC",
+      "order": 2,
+      "type": "text",
+      "required": true,
+      "pattern": "^[a-zA-Z -]*$",
+      "enum_ref": "../masters/uqc.json#/labels",
+      "transform": "uqc_code",
+      "description": "Unit of measure, chosen as 'CODE-DESCRIPTION'. Only the code reaches the payload."
+    },
+    {
+      "id": "qty",
+      "column": "Total Quantity",
+      "order": 3,
+      "type": "decimal",
+      "required": true,
+      "pattern": "^(-?(\\d{0,15})(\\.\\d{0,2})?)$",
+      "round_to": 2,
+      "description": "Total quantity supplied under this code and rate. May be negative."
+    },
+    {
+      "id": "total_value",
+      "column": "Total Value",
+      "order": 4,
+      "type": "decimal",
+      "required": true,
+      "pattern": "^(-?(\\d{0,11})(\\.\\d{0,2})?)$",
+      "round_to": 2,
+      "required_until_period": "052021",
+      "description": "Total value including tax. Carried into the payload as `val` for periods before 05-2021, and neither required nor emitted from then on."
+    },
+    {
+      "id": "rt",
+      "column": "Rate",
+      "order": 5,
+      "type": "decimal",
+      "required": true,
+      "required_from_period": "052021",
+      "enum_ref": "../masters/tax-rates.json#/item",
+      "description": "Combined tax rate for this line, in percent. Introduced with the 05-2021 period, which is also when Total Value stopped being carried."
+    },
+    {
+      "id": "txval",
+      "column": "Taxable Value",
+      "order": 6,
+      "type": "decimal",
+      "required": true,
+      "pattern": "^(-?(\\d{0,11})(\\.\\d{0,2})?)$",
+      "round_to": 2,
+      "description": "Taxable value under this code and rate, excluding tax. May be negative."
+    },
+    {
+      "id": "iamt",
+      "column": "Integrated Tax Amount",
+      "order": 7,
+      "type": "decimal",
+      "required": false,
+      "default": 0,
+      "pattern": "^(-?(\\d{0,11})(\\.\\d{0,2})?)$",
+      "round_to": 2,
+      "description": "Integrated tax. ENTERED, not derived."
+    },
+    {
+      "id": "camt",
+      "column": "Central Tax Amount",
+      "order": 8,
+      "type": "decimal",
+      "required": false,
+      "default": 0,
+      "pattern": "^(-?(\\d{0,11})(\\.\\d{0,2})?)$",
+      "round_to": 2,
+      "description": "Central tax, entered."
+    },
+    {
+      "id": "samt",
+      "column": "State/UT Tax Amount",
+      "order": 9,
+      "type": "decimal",
+      "required": false,
+      "default": 0,
+      "pattern": "^(-?(\\d{0,11})(\\.\\d{0,2})?)$",
+      "round_to": 2,
+      "description": "State/UT tax, entered."
+    },
+    {
+      "id": "csamt",
+      "column": "Cess Amount",
+      "order": 10,
+      "type": "decimal",
+      "required": false,
+      "default": 0,
+      "pattern": "^(-?(\\d{0,11})(\\.\\d{0,2})?)$",
+      "round_to": 2,
+      "description": "Cess, entered. Always optional."
+    }
+  ],
+  "rules": [],
+  "grouping": {
+    "record_key": [
+      "hsn_sc",
+      "uqc",
+      "rt"
+    ],
+    "record_conflict": "last_wins"
+  },
+  "output": {
+    "record": {
+      "keys": [
+        {
+          "key": "num",
+          "from": "derive:gstr1.record_serial",
+          "description": "1-based serial over the OUTPUT array, so collapsing duplicates renumbers densely."
+        },
+        {
+          "key": "hsn_sc",
+          "from": "field:hsn_sc"
+        },
+        {
+          "key": "desc",
+          "from": "field:desc",
+          "until_period": "052021",
+          "omit_when_empty": true,
+          "description": "Before 05-2021 the filer's own Description reaches the payload unchanged."
+        },
+        {
+          "key": "desc",
+          "from": "derive:gstr1.hsn_description",
+          "from_period": "052021",
+          "omit_when_empty": true,
+          "description": "From 05-2021 the reference OVERWRITES the Description cell with the official description looked up from its own HSN/SAC table (offline2.js:388), before validation and before mapping. The filer's own text is discarded and never pattern-checked."
+        },
+        {
+          "key": "uqc",
+          "from": "derive:gstr1.hsn_uqc",
+          "description": "Just the code, e.g. 'KGS' — or 'NA' for a service code."
+        },
+        {
+          "key": "qty",
+          "from": "derive:gstr1.hsn_quantity",
+          "description": "Total quantity, forced to 0 for a service code."
+        },
+        {
+          "key": "val",
+          "from": "field:total_value",
+          "until_period": "052021",
+          "description": "Total value. Emitted only before the 05-2021 period; from then on the payload carries rt in its place."
+        },
+        {
+          "key": "rt",
+          "from": "field:rt",
+          "from_period": "052021",
+          "description": "Rate. Emitted only from the 05-2021 period."
+        },
+        {
+          "key": "txval",
+          "from": "field:txval"
+        },
+        {
+          "key": "iamt",
+          "from": "field:iamt"
+        },
+        {
+          "key": "samt",
+          "from": "field:samt"
+        },
+        {
+          "key": "camt",
+          "from": "field:camt"
+        },
+        {
+          "key": "csamt",
+          "from": "field:csamt"
+        }
+      ]
+    },
+    "derivations": [
+      "gstr1.record_serial",
+      "gstr1.hsn_uqc",
+      "gstr1.hsn_quantity",
+      "gstr1.hsn_description"
+    ],
+    "derivation_notes": {
+      "gstr1.record_serial": "num is a 1-based serial over the records that survive collapsing, matching the reference's running counter.",
+      "gstr1.hsn_uqc": "'NA' when the HSN code starts with 99 (a SAC), otherwise the unit code from the UQC column.",
+      "gstr1.hsn_quantity": "0 when the HSN code starts with 99 (a SAC), otherwise the Total Quantity column.",
+      "gstr1.hsn_description": "desc looked up from masters/hsn-codes.json by exact code match. Applies from 05-2021 only."
+    }
+  },
+  "notes": [
+    {
+      "kind": "quirk",
+      "text": "This is the HSN summary for every period BEFORE the 05-2025 bifurcation, when a single 'hsn' sheet fed the payload's hsn.data array. From 05-2025 it is replaced by the hsn(b2b)/hsn(b2c) pair, which feed hsn.hsn_b2b and hsn.hsn_b2c. The sheet exists in workbook template V2.0 and in the tool's own hsn.csv, whose header row is byte-identical to hsn(b2b).csv.",
+      "affects": [
+        "output.record"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "The payload shape changes again at 05-2021, within this section's own lifetime: before that period a record carries `val` (total value) and no `rate`; from it, `rt` and no `val`. The reference writes the two shapes as two separate object literals, so nothing about the columns themselves signals the switch.",
+      "affects": [
+        "total_value",
+        "rt"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "The reference extracts the unit code with substring(0, indexOf('-')), which yields an empty string for any label without a hyphen — it special-cases only 'NA'. Since 'NA' is the sole hyphenless entry in the UQC master the two rules cannot be told apart in practice, so the shared uqc_code transform is used here too.",
+      "affects": [
+        "uqc"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "Rows are collapsed on code, unit and rate, last one winning, and num is then assigned over the survivors. The reference does this in addmltpldata rather than in its row mapping, which is why it is not visible in the payload builder.",
+      "affects": [
+        "output.record"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "A SERVICE CODE DISCARDS THE UNIT AND THE QUANTITY. The reference rewrites both cells before validation whenever the code starts with 99 — UQC becomes 'NA' and Total Quantity becomes 0 (offline2.js:390 for the combined table, :399 for the bifurcated pair) — so a filer's own unit and quantity on a service line never reach the payload and are never reported as wrong.",
+      "affects": [
+        "uqc",
+        "qty"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "From 05-2021 `desc` is the OFFICIAL description, looked up from the HSN/SAC master and written over the filer's Description cell before anything validates it (offline2.js:388). Before 05-2021 the filer's own text survives. Unlike hsn(b2b) there is no user_desc key, so from 05-2021 the filer's description is simply lost. Caught by the differential harness: the source reads `\"desc\": inv['Description']`, which is true but says nothing about what that cell contains by the time the mapping runs.",
+      "affects": [
+        "desc"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "The reference's own flags mark Description required from 05-2021 (isDescrReq = true), but the requirement is unreachable: offline2.js:388 fills the cell from the HSN/SAC master before validateExcelData runs, so it is never empty. Demanding it here rejected workbooks the tool accepts, which the differential caught.",
+      "affects": [
+        "desc"
+      ]
+    }
+  ]
+}
