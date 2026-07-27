@@ -29,9 +29,14 @@
       "required": true,
       "accepts": [
         "gstin",
-        "uin"
+        "uin",
+        "tds",
+        "nrtp"
       ],
-      "description": "The registered recipient."
+      "description": "The registered recipient.",
+      "constraints": [
+        "gstin_checksum"
+      ]
     },
     {
       "id": "cname",
@@ -104,12 +109,13 @@
       "description": "Corrected total value of the supply."
     },
     {
-      "id": "doc_typ",
+      "id": "inv_typ",
       "column": "Document type",
       "order": 7,
       "type": "text",
       "required": true,
-      "description": "Nature of the document. Required, but unchecked."
+      "description": "Nature of the document, as one of table 15's own labels — note 'Regular' here where table 4 says 'Regular B2B'. Decides the tax split: only R and DE can be intra-state, and SEWOP zeroes the tax and the cess. An unrecognised label is not rejected (the reference accepts it) but is reported by ecom.unknown_document_type.",
+      "transform": "invoice_type_code_table15"
     },
     {
       "id": "pos",
@@ -149,12 +155,23 @@
       "type": "decimal",
       "required": false,
       "default": 0,
-      "pattern": "^(\\d{0,11})(\\.\\d{0,2})?$",
+      "pattern": "^(-?(\\d{0,11})(\\.\\d{0,2})?)$",
       "round_to": 2,
-      "description": "Cess on this line. Must be an explicit 0 when there is none \u2014 see the quirk note."
+      "description": "Cess on this line. Must be an explicit 0 when there is none — see the quirk note."
     }
   ],
-  "rules": [],
+  "rules": [
+    {
+      "id": "ecomaurp2b.unknown_document_type",
+      "description": "The reference maps 'Document type' through a four-label lookup and silently returns nothing for anything else, which drops inv_typ from the record and forces the line inter-state. Reproduced, but reported, because the template supplies no dropdown for this column and a typo therefore changes which tax head the supply lands under.",
+      "assert": {
+        "field": "inv_typ",
+        "empty": false
+      },
+      "message": "'Document type' is not one of Regular, Deemed Exp, SEZ supplies with payment or SEZ supplies without payment, so it was ignored and this line is reported as inter-state",
+      "severity": "warning"
+    }
+  ],
   "grouping": {
     "envelope_key": [
       "rtin"
@@ -170,7 +187,7 @@
     "invoice_field_conflict": "error",
     "agree_fields": [
       "cname",
-      "doc_typ"
+      "inv_typ"
     ]
   },
   "output": {
@@ -213,6 +230,12 @@
           "from": "field:pos"
         },
         {
+          "key": "inv_typ",
+          "from": "field:inv_typ",
+          "omit_when_empty": true,
+          "description": "Invoice type code. Absent when the label did not resolve, which is how the reference leaves it."
+        },
+        {
           "key": "itms",
           "from": "nested:item"
         },
@@ -244,17 +267,17 @@
         },
         {
           "key": "itm_det.iamt",
-          "from": "derive:gstr1.tax_split_by_pos",
+          "from": "derive:gstr1.tax_split",
           "omit_when_empty": true
         },
         {
           "key": "itm_det.camt",
-          "from": "derive:gstr1.tax_split_by_pos",
+          "from": "derive:gstr1.tax_split",
           "omit_when_empty": true
         },
         {
           "key": "itm_det.samt",
-          "from": "derive:gstr1.tax_split_by_pos",
+          "from": "derive:gstr1.tax_split",
           "omit_when_empty": true
         },
         {
@@ -266,20 +289,20 @@
     "derivations": [
       "gstr1.item_num",
       "gstr1.supply_type",
-      "gstr1.tax_split_by_pos",
+      "gstr1.tax_split",
       "gstr1.cess"
     ],
     "derivation_notes": {
       "gstr1.item_num": "num = rt * 100 + 1.",
       "gstr1.supply_type": "'INTRA' when the place of supply is the filer's own state and the filer is not an SEZ unit.",
-      "gstr1.tax_split_by_pos": "Intra-state: camt = samt = round(txval * rt * 0.005, 2). Inter-state: iamt = round(txval * rt * 0.01, 2).",
+      "gstr1.tax_split": "Intra-state only when the place of supply is the filer's own state, the filer is not an SEZ unit AND inv_typ is R or DE: camt = samt = round(txval * rt * 0.005, 2). Otherwise iamt = round(txval * rt * 0.01, 2). SEWOP zeroes iamt and csamt. Note sply_ty is decided on place of supply alone, so a SEWP line can read INTRA and still carry iamt.",
       "gstr1.cess": "csamt = round(Cess Amount, 2), or 0 when blank."
     }
   },
   "notes": [
     {
       "kind": "quirk",
-      "text": "A BLANK CESS AMOUNT IS REPORTED AS A MISSING HEADER COLUMN \u2014 the presence check reads the parsed ROW, and blank cells are omitted by the reader. Every row needs an explicit 0. This implementation defaults a blank to 0 instead.",
+      "text": "A BLANK CESS AMOUNT IS REPORTED AS A MISSING HEADER COLUMN — the presence check reads the parsed ROW, and blank cells are omitted by the reader. Every row needs an explicit 0. This implementation defaults a blank to 0 instead.",
       "affects": [
         "csamt"
       ]
@@ -293,7 +316,7 @@
     },
     {
       "kind": "quirk",
-      "text": "The mirror image of its registered-supplier counterpart in key order: the REVISED document number comes first and sply_ty is emitted LAST, after flag. Nothing about the data differs \u2014 only the order the reference happens to build the object in.",
+      "text": "The mirror image of its registered-supplier counterpart in key order: the REVISED document number comes first and sply_ty is emitted LAST, after flag. Nothing about the data differs — only the order the reference happens to build the object in.",
       "affects": [
         "output.invoice"
       ]
@@ -304,6 +327,20 @@
       "affects": [
         "doc_typ",
         "pos"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "Every registration number in these tables goes through the reference's full validateGSTIN (returnStructure.js:406) — a shape test for any of the four forms followed by the mod-36 check digit. The check digit had been missing here while b2b and cdnr carried it, so a mistyped operator or counterparty GSTIN was accepted.",
+      "affects": [
+        "rtin"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "The reference validates these through Math.abs(cnvt2Nm(...)) or a signed pattern, so a negative value is never itself a reason to reject. The B2C halves in particular report an aggregate that returns can push below zero.",
+      "affects": [
+        "csamt"
       ]
     }
   ]
