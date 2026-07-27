@@ -141,12 +141,28 @@ def base_rows(workbook: Path, specs: dict[str, dict]) -> dict[str, dict]:
     return out
 
 
-def build_cases(specs: dict[str, dict], bases: dict[str, dict]) -> list[dict]:
+def in_period(spec: dict, period: str) -> bool:
+    """Whether a section is filed for this period at all. A section outside its
+    window would be probed against a tool that never reads that sheet, and every
+    case would read as a disagreement."""
+    def yyyymm(p: str) -> int:
+        return int(p[2:]) * 100 + int(p[:2])
+
+    now = yyyymm(period)
+    start, end = spec.get("active_from_period"), spec.get("active_until_period")
+    if start and now < yyyymm(start):
+        return False
+    if end and now >= yyyymm(end):
+        return False
+    return True
+
+
+def build_cases(specs: dict[str, dict], bases: dict[str, dict], period: str) -> list[dict]:
     cases = []
     for section, spec in specs.items():
         excel = spec["source"]["excel"]
         sheet = excel["sheet"]
-        if sheet not in bases:
+        if sheet not in bases or not in_period(spec, period):
             continue
         header, row = bases[sheet]["header"], bases[sheet]["row"]
         layout = {
@@ -190,10 +206,18 @@ def record_paths(envelope: dict) -> dict[str, tuple[list, list]]:
         elif src == "object":
             for member in entry["members"]:
                 add(member["from"].removeprefix("section:"), [entry["key"], member["key"]])
+    combined = envelope["hsn_before_bifurcation"]["wrapper"]
     for member in envelope["hsn_from_bifurcation"]["members"]:
         section = member["from"].removeprefix("section:")
         add(section, ["hsn", member["key"]])
-        add(section, ["hsn", envelope["hsn_before_bifurcation"]["wrapper"]], fallback=True)
+        add(section, ["hsn", combined], fallback=True)
+    # The pre-bifurcation HSN table is not a `section:` key in the envelope —
+    # `hsn` is built by its own branch — so it needs mapping by hand or its
+    # records are looked for at the top level, where an object sits rather than
+    # an array, and every row reads as a rejection.
+    add("hsn", ["hsn", combined])
+    for member in envelope["hsn_from_bifurcation"]["members"]:
+        add("hsn", ["hsn", member["key"]], fallback=True)
     return paths
 
 
@@ -305,7 +329,7 @@ def main() -> int:
         sys.exit(f"no offline tool on port {args.port} — start it with `node app.js`")
 
     specs = load_specs()
-    cases = build_cases(specs, base_rows(args.workbook, specs))
+    cases = build_cases(specs, base_rows(args.workbook, specs), args.period)
     tool = Tool(args.app_dir, args.gstin, args.period, args.fy, args.month, args.port)
     scratch = Path(args.out).parent if args.out else REPO
     workbook = scratch / ".differential-case.xlsx"
