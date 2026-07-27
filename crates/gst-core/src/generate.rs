@@ -11,12 +11,14 @@ use rust_decimal::{Decimal, RoundingStrategy};
 
 use crate::payload::Json;
 use crate::record::Record;
-use crate::spec::{ItemConflict, Level, PayloadObject, SectionSpec, Severity, Source};
+use crate::spec::{
+    ItemConflict, Level, PayloadObject, RecordConflict, SectionSpec, Severity, Source,
+};
 use crate::validate::{FilingContext, Finding};
 
 /// Half of a percent, i.e. the CGST or SGST share of a combined rate.
-const HALF_RATE: Decimal = Decimal::from_parts(5, 0, 0, false, 3); // 0.005
-const FULL_RATE: Decimal = Decimal::from_parts(1, 0, 0, false, 2); // 0.01
+const HALF_RATE: f64 = 0.005;
+const FULL_RATE: f64 = 0.01;
 
 /// Grouped output for one section.
 #[derive(Debug, Clone, Default)]
@@ -74,6 +76,9 @@ struct InvoiceGroup {
 
 struct EnvelopeGroup {
     head: Record,
+    /// The grouping key this envelope was opened under, so a row arriving via
+    /// the section-wide invoice index can be checked against it.
+    key: String,
     /// Invoices in first-seen order, with a key index beside them so grouping
     /// stays linear in the number of rows.
     invoices: Vec<InvoiceGroup>,
@@ -85,9 +90,11 @@ pub fn generate(spec: &SectionSpec, records: &[Record], ctx: &FilingContext) -> 
     let mut out = Generated::default();
 
     // Flat sections have no invoice or item level: every validated row becomes
-    // one payload object, in row order, with its tax computed on the row.
+    // one payload object, in row order, with its tax computed on the row —
+    // after rows sharing a collapse key have been folded together.
     if let Some(record_spec) = &spec.output.record {
-        for (index, record) in records.iter().enumerate() {
+        let kept = collapse_records(spec, records, ctx, &mut out.findings);
+        for (index, record) in kept.iter().enumerate() {
             let json = build_object(record_spec, record, ctx, index, &mut out.findings);
             out.push(json, member_of(spec, record));
         }
@@ -115,16 +122,63 @@ pub fn generate(spec: &SectionSpec, records: &[Record], ctx: &FilingContext) -> 
         .unwrap_or_default();
     envelope_fields.extend(spec.grouping.agree_fields.iter().cloned());
 
+    // Sections with no counterparty id match an invoice number across the whole
+    // section rather than within one envelope: invoice number to the envelope
+    // that first claimed it.
+    let mut global_invoices: HashMap<String, usize> = HashMap::new();
+
     for record in records {
         let env_key = group_key(spec, record, &spec.grouping.envelope_key);
-        let env_pos = *envelope_index.entry(env_key).or_insert_with(|| {
-            envelopes.push(EnvelopeGroup {
-                head: record.clone(),
-                invoices: Vec::new(),
-                invoice_index: HashMap::new(),
+        let inv_key = group_key(spec, record, &spec.grouping.invoice_key);
+
+        // In global mode an invoice number already seen decides which envelope
+        // this row belongs to, before any new envelope is opened.
+        let claimed = spec
+            .grouping
+            .invoice_key_global
+            .then(|| global_invoices.get(&inv_key).copied())
+            .flatten();
+
+        let env_pos = match claimed {
+            Some(pos) => pos,
+            None => *envelope_index.entry(env_key.clone()).or_insert_with(|| {
+                envelopes.push(EnvelopeGroup {
+                    head: record.clone(),
+                    key: env_key.clone(),
+                    invoices: Vec::new(),
+                    invoice_index: HashMap::new(),
+                });
+                envelopes.len() - 1
+            }),
+        };
+
+        // Reaching an envelope through the invoice number means the envelope's
+        // own key was never matched, so it has to be checked here. `disagreement`
+        // deliberately skips grouping-key fields, which are matched by
+        // construction on every other path.
+        if claimed.is_some() && envelopes[env_pos].key != env_key {
+            let column = spec
+                .grouping
+                .envelope_key
+                .first()
+                .and_then(|id| spec.field(id).map(|f| f.column.clone()))
+                .unwrap_or_else(|| "envelope".to_owned());
+            out.findings.push(Finding {
+                sheet_row: record.sheet_row,
+                column: Some(column.clone()),
+                field: spec.grouping.envelope_key.first().cloned(),
+                rule: Some("grouping.invoice_number_reused".into()),
+                severity: Severity::Error,
+                message: format!(
+                    "this document number is already used on row {} with a different '{column}'. \
+                     This section has no counterparty column, so a document number identifies a \
+                     document on its own and cannot appear twice with different details.",
+                    envelopes[env_pos].head.sheet_row,
+                ),
             });
-            envelopes.len() - 1
-        });
+            continue;
+        }
+
         let envelope = &mut envelopes[env_pos];
 
         if let Some(finding) =
@@ -134,15 +188,18 @@ pub fn generate(spec: &SectionSpec, records: &[Record], ctx: &FilingContext) -> 
             continue;
         }
 
-        let inv_key = group_key(spec, record, &spec.grouping.invoice_key);
         let invoices = &mut envelope.invoices;
-        let inv_pos = *envelope.invoice_index.entry(inv_key).or_insert_with(|| {
-            invoices.push(InvoiceGroup {
-                head: record.clone(),
-                items: Vec::new(),
+        let inv_pos = *envelope
+            .invoice_index
+            .entry(inv_key.clone())
+            .or_insert_with(|| {
+                invoices.push(InvoiceGroup {
+                    head: record.clone(),
+                    items: Vec::new(),
+                });
+                invoices.len() - 1
             });
-            invoices.len() - 1
-        });
+        global_invoices.entry(inv_key).or_insert(env_pos);
         let invoice = &mut envelope.invoices[inv_pos];
 
         if let Some(finding) = disagreement(spec, &invoice.head, record, &invoice_fields, "invoice")
@@ -155,6 +212,12 @@ pub fn generate(spec: &SectionSpec, records: &[Record], ctx: &FilingContext) -> 
             continue;
         }
         let item_key = group_key(spec, record, &spec.grouping.item_key);
+        // Nothing to collide with: this level is keyed on a serial the
+        // reference generates per row.
+        if spec.grouping.item_conflict == Some(ItemConflict::Append) {
+            invoice.items.push((item_key, record.clone()));
+            continue;
+        }
         match invoice.items.iter().position(|(k, _)| *k == item_key) {
             None => invoice.items.push((item_key, record.clone())),
             Some(existing) => match spec.grouping.item_conflict {
@@ -185,6 +248,8 @@ pub fn generate(spec: &SectionSpec, records: &[Record], ctx: &FilingContext) -> 
                         message: "summing duplicate line items is not implemented".into(),
                     });
                 }
+                // Handled before the lookup; a key collision never reaches here.
+                Some(ItemConflict::Append) => {}
                 Some(ItemConflict::Error) => out.findings.push(Finding {
                     sheet_row: record.sheet_row,
                     column: None,
@@ -219,6 +284,80 @@ pub fn generate(spec: &SectionSpec, records: &[Record], ctx: &FilingContext) -> 
     out
 }
 
+/// Fold flat rows that share the section's collapse key.
+///
+/// The reference does this on the way into its working file rather than in the
+/// payload builder, which is why it is invisible in the row mapping. Nothing is
+/// summed: one of the two rows is discarded outright, so each collapse is
+/// reported as a warning even though it reproduces the reference exactly.
+///
+/// A section with no `record_key` keeps every row, which is the common case.
+fn collapse_records<'a>(
+    spec: &SectionSpec,
+    records: &'a [Record],
+    ctx: &FilingContext,
+    findings: &mut Vec<Finding>,
+) -> Vec<&'a Record> {
+    let period = ctx.period.as_yyyymm();
+    let key_fields: Vec<&str> = spec
+        .grouping
+        .record_key
+        .iter()
+        .filter(|part| part.applies_to(period))
+        .map(|part| part.field.as_str())
+        .collect();
+    if key_fields.is_empty() {
+        return records.iter().collect();
+    }
+
+    // The reference compares these case-insensitively (it lower-cases the
+    // description and the unit before testing them), and the remaining
+    // components are codes and numbers where folding case changes nothing.
+    let key_of = |record: &Record| -> String {
+        key_fields
+            .iter()
+            .map(|id| record.text(id).to_lowercase())
+            .collect::<Vec<_>>()
+            .join("\u{1f}")
+    };
+
+    let mut kept: Vec<&Record> = Vec::new();
+    let mut index: HashMap<String, usize> = HashMap::new();
+    for record in records {
+        let key = key_of(record);
+        let Some(&at) = index.get(&key) else {
+            index.insert(key, kept.len());
+            kept.push(record);
+            continue;
+        };
+        let (winner, loser) = match spec.grouping.record_conflict {
+            // Replaced in place, so the surviving row keeps the earlier row's
+            // position — and therefore its serial number.
+            Some(RecordConflict::LastWins) | None => {
+                let displaced = kept[at];
+                kept[at] = record;
+                (record, displaced)
+            }
+            Some(RecordConflict::FirstWins) => (kept[at], record),
+        };
+        findings.push(Finding {
+            sheet_row: loser.sheet_row,
+            column: None,
+            field: None,
+            rule: Some("grouping.record_replaced".into()),
+            severity: Severity::Warning,
+            message: format!(
+                "row {} is dropped: it has the same {} as row {}, and the reference keeps only one. \
+                 Amounts are not added together — combine them into one row if both were intended.",
+                loser.sheet_row,
+                key_fields.join(" + "),
+                winner.sheet_row,
+            ),
+        });
+    }
+    kept
+}
+
 /// Field ids the payload reads directly at this level.
 fn mapped_fields(object: &PayloadObject) -> Vec<String> {
     object
@@ -231,16 +370,20 @@ fn mapped_fields(object: &PayloadObject) -> Vec<String> {
         .collect()
 }
 
+/// Build a grouping key from a record's fields.
+///
+/// Case folding applies to the INVOICE key only. The reference lower-cases the
+/// invoice number when it compares one (`iNum.toLowerCase() == ...`) and
+/// compares the counterparty id and export type with `===`, so folding the
+/// envelope key too would merge envelopes the reference keeps apart.
 fn group_key(spec: &SectionSpec, record: &Record, fields: &[String]) -> String {
+    let fold = spec.grouping.invoice_key_case_insensitive
+        && std::ptr::eq(fields, spec.grouping.invoice_key.as_slice());
     fields
         .iter()
         .map(|id| {
             let text = record.text(id);
-            if spec.grouping.invoice_key_case_insensitive {
-                text.to_lowercase()
-            } else {
-                text
-            }
+            if fold { text.to_lowercase() } else { text }
         })
         .collect::<Vec<_>>()
         .join("\u{1f}")
@@ -310,6 +453,11 @@ fn build(
 ) -> Json {
     let mut out = Json::obj();
     for key in &object.keys {
+        // A key whose shape changed at a cutover is only emitted for the
+        // periods it belongs to.
+        if !key.applies_to(ctx.period.as_yyyymm()) {
+            continue;
+        }
         let value = match &key.from {
             Source::Field(id) => cell_json(record, id),
             Source::Derive(name) => derive(name, leaf(&key.key), record, ctx, index, findings),
@@ -460,19 +608,45 @@ pub struct TaxSplit {
     pub csamt: Decimal,
 }
 
-/// The amount tax is computed on: base × rate × the applicable percentage
-/// factor. `diff_percent` is 1 when absent, which it is in every section
-/// whose derivation takes no factor.
-fn taxed_amount(record: &Record, base_field: &str) -> Decimal {
-    let base = record.number(base_field).unwrap_or_default();
-    let rate = record.number("rt").unwrap_or_default();
-    let factor = record.number("diff_percent").unwrap_or(Decimal::ONE);
-    base * rate * factor
+/// The three factors a tax component is built from, held as `f64` because the
+/// reference computes in JavaScript numbers and the result is observable.
+///
+/// Kept unmultiplied so each component can reproduce the reference's own
+/// multiplication order — `txval * rt * component * diff_percent`. Floating
+/// point multiplication is not associative, so folding `rt * diff_percent`
+/// first would land on a different last digit for a `diff_percent` of 0.65.
+#[derive(Debug, Clone, Copy)]
+struct TaxBase {
+    base: f64,
+    rate: f64,
+    factor: f64,
+}
+
+impl TaxBase {
+    /// The amount tax is computed on, for one component of the rate.
+    /// `diff_percent` is 1 when absent, which it is in every section whose
+    /// derivation takes no factor.
+    fn of(record: &Record, base_field: &str) -> Self {
+        TaxBase {
+            base: as_f64(record.number(base_field).unwrap_or_default()),
+            rate: as_f64(record.number("rt").unwrap_or_default()),
+            factor: record.number("diff_percent").map_or(1.0, as_f64),
+        }
+    }
+
+    fn component(&self, component: f64) -> Decimal {
+        round2(self.base * self.rate * component * self.factor)
+    }
 }
 
 /// A row's cess, rounded the way every guarded section rounds it.
 fn row_cess(record: &Record) -> Decimal {
-    round2(record.number("csamt").unwrap_or_default())
+    round2(as_f64(record.number("csamt").unwrap_or_default()))
+}
+
+fn as_f64(value: Decimal) -> f64 {
+    use rust_decimal::prelude::ToPrimitive;
+    value.to_f64().unwrap_or(0.0)
 }
 
 /// Zero tax throughout — what a supply made without payment of tax carries.
@@ -488,10 +662,10 @@ const WITHOUT_PAYMENT: TaxSplit = TaxSplit {
 /// state tax at half the rate each, an inter-state line integrated tax at the
 /// full rate. `both_halves` also emits the inapplicable components as explicit
 /// zeros, which only the e-commerce summary does.
-fn assemble(taxed: Decimal, cess: Decimal, intra: bool, both_halves: bool) -> TaxSplit {
+fn assemble(taxed: TaxBase, cess: Decimal, intra: bool, both_halves: bool) -> TaxSplit {
     let zero = both_halves.then_some(Decimal::ZERO);
     if intra {
-        let half = round2(taxed * HALF_RATE);
+        let half = taxed.component(HALF_RATE);
         TaxSplit {
             iamt: zero,
             camt: Some(half),
@@ -500,7 +674,7 @@ fn assemble(taxed: Decimal, cess: Decimal, intra: bool, both_halves: bool) -> Ta
         }
     } else {
         TaxSplit {
-            iamt: Some(round2(taxed * FULL_RATE)),
+            iamt: Some(taxed.component(FULL_RATE)),
             camt: zero,
             samt: zero,
             csamt: cess,
@@ -518,7 +692,7 @@ pub fn tax_split(record: &Record, ctx: &FilingContext) -> TaxSplit {
         return WITHOUT_PAYMENT;
     }
     assemble(
-        taxed_amount(record, "txval"),
+        TaxBase::of(record, "txval"),
         row_cess(record),
         is_intra_state(record, ctx),
         false,
@@ -538,7 +712,7 @@ pub fn is_intra_state_by_pos(record: &Record, ctx: &FilingContext) -> bool {
 /// Tax split for sections with no invoice-type column.
 pub fn tax_split_by_pos(record: &Record, ctx: &FilingContext) -> TaxSplit {
     assemble(
-        taxed_amount(record, "txval"),
+        TaxBase::of(record, "txval"),
         row_cess(record),
         is_intra_state_by_pos(record, ctx),
         false,
@@ -552,7 +726,7 @@ pub fn tax_split_by_pos(record: &Record, ctx: &FilingContext) -> TaxSplit {
 /// carries the split alongside `iamt: 0`. Confirmed against a captured file.
 pub fn tax_split_ecom(record: &Record, ctx: &FilingContext) -> TaxSplit {
     assemble(
-        taxed_amount(record, "txval"),
+        TaxBase::of(record, "txval"),
         row_cess(record),
         is_intra_state_by_pos(record, ctx),
         true,
@@ -566,7 +740,7 @@ pub fn tax_split_ecom(record: &Record, ctx: &FilingContext) -> TaxSplit {
 /// these tables carry no invoice.
 pub fn tax_split_advance(record: &Record, ctx: &FilingContext) -> TaxSplit {
     assemble(
-        taxed_amount(record, "ad_amt"),
+        TaxBase::of(record, "ad_amt"),
         row_cess(record),
         is_intra_state_by_pos(record, ctx),
         false,
@@ -582,12 +756,7 @@ pub fn tax_split_unregistered(record: &Record, _ctx: &FilingContext) -> TaxSplit
     if record.text("typ") == "EXPWOP" {
         return WITHOUT_PAYMENT;
     }
-    assemble(
-        taxed_amount(record, "txval"),
-        row_cess(record),
-        false,
-        false,
-    )
+    assemble(TaxBase::of(record, "txval"), row_cess(record), false, false)
 }
 
 /// Cess for the two B2C(Large) tables, which compute it without the empty-cell
@@ -601,7 +770,7 @@ pub fn cess_unguarded(record: &Record) -> Json {
     if record.text("csamt").trim().is_empty() {
         return Json::Null;
     }
-    Json::Num(round2(record.number("csamt").unwrap_or_default()))
+    Json::Num(round2(as_f64(record.number("csamt").unwrap_or_default())))
 }
 
 /// Tax on an export invoice.
@@ -614,17 +783,31 @@ pub fn tax_export(record: &Record, _ctx: &FilingContext) -> TaxSplit {
     if record.text("exp_typ") == "WOPAY" {
         return WITHOUT_PAYMENT;
     }
-    assemble(
-        taxed_amount(record, "txval"),
-        row_cess(record),
-        false,
-        false,
-    )
+    assemble(TaxBase::of(record, "txval"), row_cess(record), false, false)
 }
 
-/// Money rounds to two places, away from zero at the midpoint.
-fn round2(value: Decimal) -> Decimal {
-    value.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero)
+/// Money rounds to two places exactly as the reference does it.
+///
+/// The reference is JavaScript: `parseFloat(x.toFixed(2))`, where `x` is a
+/// binary double. `toFixed` rounds half away from zero on the double's *exact*
+/// value, not on the decimal literal the double was written as — and a double
+/// almost never sits exactly on a decimal midpoint. `10000.10 * 5 * 0.01` reads
+/// as 500.005 but the double is 500.00499999999999545…, so the reference emits
+/// 500.00 where exact-decimal arithmetic gives 500.01.
+///
+/// Reproducing that means expanding the double to its exact decimal value and
+/// rounding half-away-from-zero there. `from_f64_retain` gives that exact
+/// expansion, so the midpoint test lands on the same side as the reference's.
+fn round2(value: f64) -> Decimal {
+    Decimal::from_f64_retain(value)
+        .unwrap_or_default()
+        .round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero)
+}
+
+/// Whether a row's HSN column holds a SAC — a service code. The tables mark
+/// these by a leading `99`, and the reference tests exactly that prefix.
+fn is_service_code(record: &Record) -> bool {
+    record.text("hsn_sc").starts_with("99")
 }
 
 /// A line item's number, derived from its rate rather than its position:
@@ -694,6 +877,22 @@ fn derive(
         // 1-based position of this record in row order. Used where the payload
         // carries a serial rather than a rate-derived number.
         "gstr1.record_serial" => Json::Num(Decimal::from(index + 1)),
+        // A SAC — a service code, which every HSN table marks by a leading 99 —
+        // has no unit and no quantity. The reference rewrites both cells before
+        // validation rather than checking them (offline2.js:390, :399), so a
+        // filer's own unit and quantity on a service line are discarded.
+        "gstr1.hsn_uqc" => Json::Str(if is_service_code(record) {
+            "NA".to_owned()
+        } else {
+            record.text("uqc")
+        }),
+        "gstr1.hsn_quantity" => {
+            if is_service_code(record) {
+                Json::Num(Decimal::ZERO)
+            } else {
+                cell_json(record, "qty")
+            }
+        }
         // 1-based index of the document nature in the master's fixed order.
         "gstr1.document_number" => {
             let typ = record.text("doc_typ");
@@ -777,6 +976,8 @@ pub fn unimplemented_derivations(spec: &SectionSpec) -> Vec<&str> {
         "gstr1.item_num",
         "gstr1.record_serial",
         "gstr1.hsn_description",
+        "gstr1.hsn_uqc",
+        "gstr1.hsn_quantity",
         "gstr1.document_number",
         "gstr1.net_issue",
         "gstr1.original_period",
@@ -790,4 +991,66 @@ pub fn unimplemented_derivations(spec: &SectionSpec) -> Vec<&str> {
         .map(String::as_str)
         .filter(|d| !SCALAR.contains(d) && !TAX_SPLITS.iter().any(|(n, _)| n == d))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Cases measured against the running reference tool. Each is a taxable
+    /// value whose exact product lands on a decimal midpoint, where the
+    /// reference's double does not.
+    #[test]
+    fn rounding_follows_the_reference_not_exact_decimal_arithmetic() {
+        // (base, rate, component, what the reference emits)
+        let cases = [
+            (10000.10, 5.0, FULL_RATE, "500"),
+            (10000.75, 18.0, FULL_RATE, "1800.13"),
+            (10000.20, 5.0, HALF_RATE, "250"),
+            (10001.50, 18.0, HALF_RATE, "900.13"),
+            // Not every midpoint falls the same way: this double sits *above*
+            // its decimal midpoint, so here the reference rounds up and the two
+            // models happen to agree.
+            (10000.50, 18.0, HALF_RATE, "900.05"),
+        ];
+        for (base, rate, component, expected) in cases {
+            let taxed = TaxBase {
+                base,
+                rate,
+                factor: 1.0,
+            };
+            assert_eq!(
+                taxed.component(component).normalize().to_string(),
+                expected,
+                "{base} at {rate}% x {component}"
+            );
+        }
+    }
+
+    #[test]
+    fn rounding_is_symmetric_about_zero() {
+        assert_eq!(round2(-0.125).to_string(), "-0.13");
+        assert_eq!(round2(0.125).to_string(), "0.13");
+        assert_eq!(round2(0.0).normalize().to_string(), "0");
+    }
+
+    /// `diff_percent` is applied last, as the reference writes it. Folding it
+    /// into the rate first is a different double and can differ in the last
+    /// place.
+    /// `diff_percent` is applied last, as the reference writes it. Folding it
+    /// into the rate first is a different double, and the difference survives
+    /// rounding: 18.00 at 5% and 65% is 0.59 in the reference's order and 0.58
+    /// with the factor folded in early.
+    #[test]
+    fn the_applicable_percentage_is_applied_in_the_reference_order() {
+        let taxed = TaxBase {
+            base: 18.0,
+            rate: 5.0,
+            factor: 0.65,
+        };
+        assert_eq!(taxed.component(FULL_RATE).to_string(), "0.59");
+
+        let folded = round2(18.0f64 * (5.0 * 0.65) * FULL_RATE);
+        assert_eq!(folded.to_string(), "0.58");
+    }
 }

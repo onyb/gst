@@ -16,7 +16,7 @@ use std::sync::LazyLock;
 use crate::generate::{Generated, generate};
 use crate::import::{ImportError, Workbook};
 use crate::payload::Json;
-use crate::spec::{self, period_as_yyyymm};
+use crate::spec::{self, Severity, period_as_yyyymm};
 use crate::validate::{FilingContext, Finding, validate};
 
 #[derive(Debug, Clone, Deserialize)]
@@ -52,6 +52,12 @@ struct Chunking {
     max_bytes: usize,
 }
 
+/// The reduced key set a quarterly filer's first two months carry.
+#[derive(Debug, Clone, Deserialize)]
+struct Iff {
+    keep_keys: Vec<String>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 struct Filename {
     pattern: String,
@@ -64,6 +70,7 @@ struct EnvelopeSpec {
     hsn_bifurcation_start_period: String,
     filename: Filename,
     chunking: Chunking,
+    iff: Iff,
     #[serde(default)]
     omit_empty_sections: bool,
     keys: Vec<EnvelopeKey>,
@@ -85,9 +92,30 @@ pub struct Turnover {
     pub current: Option<Decimal>,
 }
 
+impl Turnover {
+    /// The pair, present only when both halves are. The reference emits them
+    /// together or not at all; see the envelope builder.
+    pub fn pair(&self) -> Option<(Decimal, Decimal)> {
+        self.gross.zip(self.current)
+    }
+}
+
 /// The size beyond which the reference splits an upload into chunks.
 pub fn max_chunk_bytes() -> usize {
     ENVELOPE.chunking.max_bytes
+}
+
+/// The size the reference actually compares against its chunk limit.
+///
+/// It measures `jsonSize(JSON.stringify(gstfile))` (offline.js:5474), but
+/// `gstfile` has already been serialized by then — so the string gets
+/// stringified a SECOND time and what is measured is the UTF-8 length of the
+/// JSON string *literal*: the body, plus the two enclosing quotes, plus one
+/// escape byte for every `"` and `\` in it. GSTR-1 payloads run 15-20% quote
+/// characters, so the reference splits at roughly 3.9-4.1 MiB of real JSON
+/// rather than the 4.7 MiB the constant suggests.
+pub fn reference_size(body: &str) -> usize {
+    body.len() + 2 + body.bytes().filter(|b| *b == b'"' || *b == b'\\').count()
 }
 
 /// The filename the reference writes, e.g. `returns_2672026_R1_27AAA…_offline.json`.
@@ -185,6 +213,31 @@ pub fn read_workbook(path: &Path, ctx: &FilingContext) -> Result<WorkbookRun, Wo
         if rows.is_empty() {
             continue;
         }
+        // A sheet outside its section's period window has nowhere to go in the
+        // upload file. Skipping it silently is exactly how the pre-bifurcation
+        // HSN summary used to vanish, so say so instead.
+        if !section.active_for(ctx.period.as_yyyymm()) {
+            run.findings.push(Finding {
+                sheet_row: 0,
+                column: None,
+                field: None,
+                rule: Some("workbook.section_not_filed_this_period".into()),
+                severity: Severity::Error,
+                message: format!(
+                    "sheet '{}' has {} row(s) but section '{}' is not filed for period {} — \
+                     this is the wrong workbook template for the period",
+                    section
+                        .source
+                        .excel
+                        .as_ref()
+                        .map_or(section.section.as_str(), |e| e.sheet.as_str()),
+                    rows.len(),
+                    section.section,
+                    ctx.period.as_mmyyyy(),
+                ),
+            });
+            continue;
+        }
         let report = validate(section, &rows, ctx);
         let mut out = generate(section, &report.records, ctx);
         run.stats.push(SectionStat {
@@ -229,17 +282,36 @@ pub fn build(
         section_envelopes(sections, code, member.member.as_deref())
     };
 
+    // A quarterly filer's first two months are an Invoice Furnishing Facility
+    // return, which carries four tables and the header keys and nothing else —
+    // not even the turnover. The reference deletes the rest after building the
+    // full object (offline.js:5464), so the filter is applied the same way here.
+    let iff = ctx.is_quarterly && !ctx.period.month.is_multiple_of(3);
+    let keeps = |key: &str| !iff || spec.iff.keep_keys.iter().any(|k| k == key);
+
     let mut out = Json::obj();
     for entry in &spec.keys {
+        if !keeps(&entry.key) {
+            continue;
+        }
         let mut value = match entry.from.as_str() {
             "context:gstin" => Json::Str(ctx.supplier_gstin.clone()),
             "context:period" => Json::Str(ctx.period.as_mmyyyy()),
-            "context:gross_turnover" => match turnover.gross {
-                Some(v) => Json::Num(v),
+            // Both or neither, and both integers.
+            //
+            // The reference reads them with parseInt (common.js:168), so a
+            // fractional turnover is truncated before it is written. And it
+            // decides on `isNaN(gt)` alone (common.js:178): with a gross
+            // turnover it emits BOTH keys, without one it emits neither. There
+            // is no reachable input that produces cur_gt on its own — supplying
+            // only that yields the literal text `"cur_gt":NaN`, which is not
+            // JSON and blows up the tool's own parse a few lines later.
+            "context:gross_turnover" => match turnover.pair() {
+                Some((gross, _)) => Json::Num(gross.trunc()),
                 None => continue,
             },
-            "context:current_gross_turnover" => match turnover.current {
-                Some(v) => Json::Num(v),
+            "context:current_gross_turnover" => match turnover.pair() {
+                Some((_, current)) => Json::Num(current.trunc()),
                 None => continue,
             },
             "literal:version" => Json::Str(spec.version.clone()),
@@ -323,11 +395,24 @@ fn section_envelopes(
 /// keeps its empty member. omit-empty is recursive by construction and the
 /// top-level behaviour is confirmed, so the same rule is applied inside.
 fn prune_empty(value: &mut Json) {
-    if let Json::Obj(entries) = value {
-        for (_, v) in entries.iter_mut() {
-            prune_empty(v);
+    match value {
+        Json::Obj(entries) => {
+            for (_, v) in entries.iter_mut() {
+                prune_empty(v);
+            }
+            entries.retain(|(_, v)| !v.is_empty_recursive());
         }
-        entries.retain(|(_, v)| !v.is_empty_recursive());
+        // The reference's omit-empty walks array elements as well
+        // (node_modules/omit-empty/index.js:59), so an empty key inside an
+        // invoice or a line item is dropped at every depth, not just at the
+        // top level.
+        Json::Arr(items) => {
+            for item in items.iter_mut() {
+                prune_empty(item);
+            }
+            items.retain(|item| !item.is_empty_recursive());
+        }
+        _ => {}
     }
 }
 
@@ -342,6 +427,7 @@ mod tests {
             period: ReturnPeriod::new(month, year).unwrap(),
             is_sez: false,
             aato_over_5cr: false,
+            is_quarterly: false,
         }
     }
 
@@ -453,37 +539,152 @@ mod tests {
         );
     }
 
+    /// The HSN summary changes shape at 05-2025, and the section feeding it
+    /// changes with it.
+    ///
+    /// Driven through the real pipeline — spec, validation, generation — rather
+    /// than by planting a section key in the map. An earlier version of this
+    /// test inserted `"hsn"` by hand, which no import could ever produce: no
+    /// spec registered that code, `take("hsn")` therefore always came back
+    /// empty, and every return before 05-2025 silently shipped without its HSN
+    /// summary while this test stayed green.
     #[test]
     fn hsn_changes_shape_at_the_bifurcation_period() {
-        // The wrapper is only observable once the section has records, since an
-        // empty hsn is dropped like any other empty section.
-        let row = || Generated {
-            envelopes: vec![Json::Obj(vec![(
-                "hsn_sc".to_string(),
-                Json::Str("0101".into()),
-            )])],
-            ..Default::default()
-        };
+        use crate::record::Row;
 
-        // Before May 2025 a single `data` array, fed by the combined section.
+        /// Every template column, blank except the ones named — so a column
+        /// this section declares but the caller forgot still reads as empty
+        /// rather than as a missing column.
+        fn generated(code: &str, ctx: &FilingContext, cells: &[(&str, &str)]) -> Generated {
+            let spec = spec::section(code).expect("registered");
+            let row = Row::from_pairs(
+                5,
+                spec.columns().into_iter().map(|column| {
+                    let value = cells
+                        .iter()
+                        .find(|(name, _)| *name == column)
+                        .map_or("", |(_, value)| *value);
+                    (column, value)
+                }),
+            );
+            let report = validate(spec, &[row], ctx);
+            assert!(report.is_clean(), "{code}: {:?}", report.findings);
+            generate(spec, &report.records, ctx)
+        }
+
+        // Before May 2025: one `hsn` sheet feeding a single `data` array. The
+        // period also predates 05-2021, so the record carries `val` and no rate.
+        let before_ctx = ctx(4, 2021);
         let mut before_sections = HashMap::new();
-        before_sections.insert("hsn".to_string(), row());
-        let before = build(&before_sections, &ctx(4, 2025), Turnover::default()).to_json();
+        before_sections.insert(
+            "hsn".to_string(),
+            generated(
+                "hsn",
+                &before_ctx,
+                &[
+                    ("HSN", "0101"),
+                    ("Description", "Live horses"),
+                    ("UQC", "NOS-NUMBERS"),
+                    ("Total Quantity", "10"),
+                    ("Total Value", "118000"),
+                    ("Taxable Value", "100000"),
+                    ("Integrated Tax Amount", "18000"),
+                ],
+            ),
+        );
+        let before = build(&before_sections, &before_ctx, Turnover::default()).to_json();
+        assert!(before.contains(r#""hsn":{"data":["#), "{before}");
+        assert!(before.contains(r#""hsn_sc":"0101""#), "{before}");
+        assert!(before.contains(r#""val":118000"#), "{before}");
         assert!(
-            before.contains(r#""hsn":{"data":[{"hsn_sc":"0101"}]}"#),
-            "{before}"
+            !before.contains(r#""rt""#),
+            "pre-05-2021 has no rate: {before}"
         );
 
-        // From May 2025, split by B2B and B2C.
-        let mut after_sections = HashMap::new();
-        after_sections.insert("hsn(b2b)".to_string(), row());
-        let after = build(&after_sections, &ctx(5, 2025), Turnover::default()).to_json();
-        assert!(
-            after.contains(r#""hsn":{"hsn_b2b":[{"hsn_sc":"0101"}]}"#),
-            "{after}"
+        // From 05-2021, still the single sheet, but now carrying the rate in
+        // place of the total value.
+        let mid_ctx = ctx(6, 2021);
+        let mut mid_sections = HashMap::new();
+        mid_sections.insert(
+            "hsn".to_string(),
+            generated(
+                "hsn",
+                &mid_ctx,
+                &[
+                    ("HSN", "0101"),
+                    ("Description", "Live horses"),
+                    ("UQC", "NOS-NUMBERS"),
+                    ("Total Quantity", "10"),
+                    ("Rate", "18"),
+                    ("Taxable Value", "100000"),
+                    ("Integrated Tax Amount", "18000"),
+                ],
+            ),
         );
+        let mid = build(&mid_sections, &mid_ctx, Turnover::default()).to_json();
+        assert!(mid.contains(r#""hsn":{"data":["#), "{mid}");
+        assert!(mid.contains(r#""rt":18"#), "{mid}");
+        assert!(
+            !mid.contains(r#""val""#),
+            "from 05-2021 there is no val: {mid}"
+        );
+
+        // From May 2025, split into B2B and B2C halves.
+        let after_ctx = ctx(5, 2025);
+        let mut after_sections = HashMap::new();
+        after_sections.insert(
+            "hsn(b2b)".to_string(),
+            generated(
+                "hsn(b2b)",
+                &after_ctx,
+                &[
+                    ("HSN", "0101"),
+                    ("Description", "Live horses"),
+                    ("UQC", "NOS-NUMBERS"),
+                    ("Total Quantity", "10"),
+                    ("Total Value", "118000"),
+                    ("Rate", "18"),
+                    ("Taxable Value", "100000"),
+                    ("Integrated Tax Amount", "18000"),
+                ],
+            ),
+        );
+        let after = build(&after_sections, &after_ctx, Turnover::default()).to_json();
+        assert!(after.contains(r#""hsn":{"hsn_b2b":["#), "{after}");
         // The empty half is dropped rather than emitted.
         assert!(!after.contains("hsn_b2c"), "{after}");
+    }
+
+    /// The regression the fabricated test above used to hide: a section the
+    /// envelope draws from must actually be registered under that code.
+    #[test]
+    fn every_section_the_envelope_names_is_a_registered_section() {
+        let mut named: Vec<&str> = Vec::new();
+        for entry in &ENVELOPE.keys {
+            if let Some(code) = entry.from.strip_prefix("section:") {
+                named.push(code);
+            }
+            for member in &entry.members {
+                if let Some(code) = member.from.strip_prefix("section:") {
+                    named.push(code);
+                }
+            }
+        }
+        for member in &ENVELOPE.hsn_from_bifurcation.members {
+            if let Some(code) = member.from.strip_prefix("section:") {
+                named.push(code);
+            }
+        }
+        // The pre-bifurcation branch draws from the bare `hsn` code.
+        named.push("hsn");
+
+        for code in named {
+            assert!(
+                spec::section(code).is_some(),
+                "the upload envelope draws from section '{code}', which no spec registers — \
+                 that key would silently be empty in every generated file"
+            );
+        }
     }
 
     #[test]

@@ -167,12 +167,47 @@ pub struct Field {
     /// Decimal places this amount is rounded to before its pattern is
     /// checked, mirroring the reference's numeric conversion.
     pub round_to: Option<u32>,
+    /// Narrows `required` to a range of return periods, for columns a section
+    /// began or stopped insisting on at a cutover. Absent means `required`
+    /// applies to every period.
+    pub required_from_period: Option<String>,
+    pub required_until_period: Option<String>,
     #[serde(default)]
     pub constraints: Vec<Constraint>,
     pub transform: Option<String>,
     #[serde(default)]
     pub must_be_empty: bool,
     pub description: Option<String>,
+}
+
+/// Whether a period-scoped thing applies to a return period, as YYYYMM.
+/// `from` is inclusive, `until` exclusive — the same convention [`Constraint`]
+/// uses, so a cutover period is named once and means the same everywhere.
+fn within(from: &Option<String>, until: &Option<String>, period_yyyymm: u32) -> bool {
+    let bound = |p: &Option<String>| p.as_deref().and_then(period_as_yyyymm);
+    if let Some(from) = bound(from)
+        && period_yyyymm < from
+    {
+        return false;
+    }
+    if let Some(until) = bound(until)
+        && period_yyyymm >= until
+    {
+        return false;
+    }
+    true
+}
+
+impl Field {
+    /// Whether this column must carry a value for the period being filed.
+    pub fn is_required(&self, period_yyyymm: u32) -> bool {
+        self.required
+            && within(
+                &self.required_from_period,
+                &self.required_until_period,
+                period_yyyymm,
+            )
+    }
 }
 
 /// Boolean expression over a row's fields.
@@ -203,6 +238,18 @@ pub enum Predicate {
         field: String,
         other: String,
     },
+    /// Field-to-field numeric equality — central tax must equal state tax.
+    EqField {
+        field: String,
+        other: String,
+    },
+    /// The field's text matches a regular expression. Used where a value's
+    /// allowed shape depends on another cell, which a field-level `pattern`
+    /// cannot express.
+    Matches {
+        field: String,
+        pattern: String,
+    },
     /// Field-to-field sign agreement: both positive, both negative, or either
     /// one zero. The reference uses this to keep a cess from contradicting the
     /// amount it is charged on.
@@ -226,6 +273,8 @@ pub struct RawPredicate {
     in_: Option<Vec<SpecValue>>,
     empty: Option<bool>,
     gte_field: Option<String>,
+    eq_field: Option<String>,
+    matches: Option<String>,
     sign_agrees_with: Option<String>,
     all: Option<Vec<RawPredicate>>,
     any: Option<Vec<RawPredicate>>,
@@ -254,18 +303,36 @@ impl TryFrom<RawPredicate> for Predicate {
             raw.in_,
             raw.empty,
             raw.gte_field,
+            raw.eq_field,
+            raw.matches,
             raw.sign_agrees_with,
         ) {
-            (Some(value), None, None, None, None, None) => Ok(Predicate::Eq { field, value }),
-            (None, Some(value), None, None, None, None) => Ok(Predicate::Ne { field, value }),
-            (None, None, Some(values), None, None, None) => Ok(Predicate::In { field, values }),
-            (None, None, None, Some(empty), None, None) => Ok(Predicate::Empty { field, empty }),
-            (None, None, None, None, Some(other), None) => Ok(Predicate::GteField { field, other }),
-            (None, None, None, None, None, Some(other)) => {
+            (Some(value), None, None, None, None, None, None, None) => {
+                Ok(Predicate::Eq { field, value })
+            }
+            (None, Some(value), None, None, None, None, None, None) => {
+                Ok(Predicate::Ne { field, value })
+            }
+            (None, None, Some(values), None, None, None, None, None) => {
+                Ok(Predicate::In { field, values })
+            }
+            (None, None, None, Some(empty), None, None, None, None) => {
+                Ok(Predicate::Empty { field, empty })
+            }
+            (None, None, None, None, Some(other), None, None, None) => {
+                Ok(Predicate::GteField { field, other })
+            }
+            (None, None, None, None, None, Some(other), None, None) => {
+                Ok(Predicate::EqField { field, other })
+            }
+            (None, None, None, None, None, None, Some(pattern), None) => {
+                Ok(Predicate::Matches { field, pattern })
+            }
+            (None, None, None, None, None, None, None, Some(other)) => {
                 Ok(Predicate::SignAgreesWith { field, other })
             }
             _ => Err(format!(
-                "predicate on `{field}` must have exactly one of eq/ne/in/empty/gte_field/sign_agrees_with"
+                "predicate on `{field}` must have exactly one of eq/ne/in/empty/gte_field/eq_field/matches/sign_agrees_with"
             )),
         }
     }
@@ -317,6 +384,9 @@ pub enum ItemConflict {
     LastWins,
     Sum,
     Error,
+    /// Both rows are kept. For levels the reference keys on a freshly minted
+    /// serial rather than on any cell, so a collision is impossible there.
+    Append,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -324,6 +394,70 @@ pub enum ItemConflict {
 pub enum InvoiceFieldConflict {
     Error,
     FirstWins,
+}
+
+/// What the reference does with a second flat record carrying the same key.
+///
+/// Both variants discard one of the two rows outright — no summing — so the
+/// engine reproduces the choice and warns, rather than quietly losing money.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecordConflict {
+    /// The later row replaces the earlier one, in the earlier one's position.
+    LastWins,
+    /// The later row is dropped.
+    FirstWins,
+}
+
+/// One component of a collapse key, optionally scoped to a range of periods —
+/// the pre-bifurcation HSN summary added the rate to its key at 05-2021.
+#[derive(Debug, Clone)]
+pub struct KeyPart {
+    pub field: String,
+    pub from_period: Option<String>,
+    pub until_period: Option<String>,
+}
+
+impl KeyPart {
+    pub fn applies_to(&self, period_yyyymm: u32) -> bool {
+        within(&self.from_period, &self.until_period, period_yyyymm)
+    }
+}
+
+/// Wire form: a bare string names an always-applicable component.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum RawKeyPart {
+    Field(String),
+    Detailed {
+        field: String,
+        from_period: Option<String>,
+        until_period: Option<String>,
+        #[allow(dead_code)]
+        description: Option<String>,
+    },
+}
+
+impl<'de> Deserialize<'de> for KeyPart {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(match RawKeyPart::deserialize(d)? {
+            RawKeyPart::Field(field) => KeyPart {
+                field,
+                from_period: None,
+                until_period: None,
+            },
+            RawKeyPart::Detailed {
+                field,
+                from_period,
+                until_period,
+                ..
+            } => KeyPart {
+                field,
+                from_period,
+                until_period,
+            },
+        })
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -343,6 +477,18 @@ pub struct Grouping {
     pub agree_fields: Vec<String>,
     pub item_conflict: Option<ItemConflict>,
     pub invoice_field_conflict: Option<InvoiceFieldConflict>,
+    /// Flat sections only: the key rows are collapsed on before they become
+    /// payload records. Empty means every row is its own record.
+    #[serde(default)]
+    pub record_key: Vec<KeyPart>,
+    pub record_conflict: Option<RecordConflict>,
+    /// Whether an invoice number is matched across the whole section rather
+    /// than within its envelope. Sections with no counterparty id — B2C large,
+    /// exports, notes to unregistered persons — do exactly that in the
+    /// reference, because the absent id normalises to the empty string on both
+    /// sides and drops out of the comparison.
+    #[serde(default)]
+    pub invoice_key_global: bool,
 }
 
 /// Where a payload key's content comes from.
@@ -398,8 +544,18 @@ pub struct PayloadKey {
     pub omit_when_value: Option<SpecValue>,
     /// Emitted ONLY when the value is exactly this, and dropped otherwise.
     pub only_when_value: Option<SpecValue>,
+    /// Emitted only for return periods in this range, for sections whose
+    /// payload shape changed at a cutover.
+    pub from_period: Option<String>,
+    pub until_period: Option<String>,
     pub verify: Option<Verify>,
     pub description: Option<String>,
+}
+
+impl PayloadKey {
+    pub fn applies_to(&self, period_yyyymm: u32) -> bool {
+        within(&self.from_period, &self.until_period, period_yyyymm)
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -496,6 +652,11 @@ pub struct SectionSpec {
     pub rules: Vec<Rule>,
     pub grouping: Grouping,
     pub output: Output,
+    /// Return periods this section is filed for at all. The HSN summary is the
+    /// only one so far: a single sheet up to the 05-2025 bifurcation, a B2B/B2C
+    /// pair from it. Absent means every period.
+    pub active_from_period: Option<String>,
+    pub active_until_period: Option<String>,
     #[serde(default)]
     pub notes: Vec<Note>,
 }
@@ -503,6 +664,18 @@ pub struct SectionSpec {
 impl SectionSpec {
     pub fn field(&self, id: &str) -> Option<&Field> {
         self.fields.iter().find(|f| f.id == id)
+    }
+
+    /// Whether this section is filed for the given period at all. A sheet
+    /// outside its window is not read: its records would have nowhere to go in
+    /// the upload file, and dropping them silently is how the pre-bifurcation
+    /// HSN summary went missing for every period before 05-2025.
+    pub fn active_for(&self, period_yyyymm: u32) -> bool {
+        within(
+            &self.active_from_period,
+            &self.active_until_period,
+            period_yyyymm,
+        )
     }
 
     /// Column headers in template order — what an importer matches against.
@@ -586,6 +759,7 @@ sections! {
     GSTR1_ECOMA_URP2B => "gstr1/ecoaurp2b.json",
     GSTR1_ECOMA_URP2C => "gstr1/ecoaurp2c.json",
     GSTR1_DOC_ISSUE => "gstr1/docs.json",
+    GSTR1_HSN => "gstr1/hsn.json",
     GSTR1_HSN_B2B => "gstr1/hsn-b2b.json",
     GSTR1_HSN_B2C => "gstr1/hsn-b2c.json",
 }
@@ -823,6 +997,7 @@ mod tests {
                 "ecomaurp2b",
                 "ecomaurp2c",
                 "doc_issue",
+                "hsn",
                 "hsn(b2b)",
                 "hsn(b2c)"
             ]

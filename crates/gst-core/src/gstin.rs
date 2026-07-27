@@ -60,12 +60,12 @@ pub fn checksum_valid(id: &str) -> bool {
         return false;
     }
     let (body, given) = id.split_at(14);
-    check_digit(body).is_some_and(|expected| {
-        given
-            .chars()
-            .next()
-            .is_some_and(|c| c.to_ascii_uppercase() == expected)
-    })
+    // Compared as written, NOT case-folded. The reference tests
+    // `gst === checkGstn(gst.substr(0, 14))`, and `checkGstn` appends a digit
+    // taken from an uppercase alphabet, so a lowercase check character can
+    // never match however correct its value. The shape patterns admit one, so
+    // this is the only thing standing between `12geops0823bbzh` and acceptance.
+    check_digit(body).is_some_and(|expected| given.starts_with(expected))
 }
 
 /// Whether `id` matches the shape of any accepted form. Shape only — callers

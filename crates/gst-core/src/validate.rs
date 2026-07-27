@@ -31,6 +31,10 @@ pub struct FilingContext {
     /// Whether the filer's aggregate annual turnover exceeds 5 crore, which
     /// raises the minimum HSN code length from 4 digits to 6.
     pub aato_over_5cr: bool,
+    /// Whether the filer files quarterly (the QRMP scheme). In the first two
+    /// months of a quarter such a filer submits an IFF, which carries only
+    /// four of the return's tables — see `upload::build`.
+    pub is_quarterly: bool,
 }
 
 impl FilingContext {
@@ -176,7 +180,7 @@ fn validate_field(field: &Field, raw: &str, ctx: &FilingContext) -> Result<Cell,
     }
 
     if text.is_empty() {
-        return if field.required && !field.must_be_empty {
+        return if field.is_required(ctx.period.as_yyyymm()) && !field.must_be_empty {
             Err(format!("'{}' is required", field.column))
         } else {
             Ok(Cell::Empty)
@@ -252,7 +256,7 @@ fn validate_field(field: &Field, raw: &str, ctx: &FilingContext) -> Result<Cell,
     let period = ctx.period.as_yyyymm();
     for constraint in &field.constraints {
         if constraint.applies_to(period) {
-            apply_constraint(constraint, field, &checked, ctx)?;
+            apply_constraint(constraint, field, &checked, &text, ctx)?;
         }
     }
 
@@ -278,6 +282,7 @@ fn apply_constraint(
     constraint: &Constraint,
     field: &Field,
     text: &str,
+    raw: &str,
     ctx: &FilingContext,
 ) -> Result<(), String> {
     match constraint.name.as_str() {
@@ -306,11 +311,12 @@ fn apply_constraint(
         }
         // Inter-state-only sections: the place of supply cannot be the
         // supplier's own state. The reference skips this for an SEZ supplier,
-        // whose supplies are treated as inter-state regardless.
-        "pos_differs_from_supplier_state" => {
-            if ctx.is_sez {
-                return Ok(());
-            }
+        // whose supplies are treated as inter-state regardless — but only in
+        // B2C(Large), where the carve-out is written explicitly
+        // (returnStructure.js:8808). Notes to unregistered persons get the
+        // strict form below, which has no such branch.
+        "pos_differs_from_supplier_state" if ctx.is_sez => Ok(()),
+        "pos_differs_from_supplier_state" | "pos_differs_from_supplier_state_even_for_sez" => {
             match ctx.supplier_state() {
                 Some(state) if state == text => Err(format!(
                     "'{}' is your own state ({state}) — this section is for inter-state supplies only",
@@ -331,14 +337,24 @@ fn apply_constraint(
         // Codes 01-38 are states and UTs; 96 is Other Country, 97 is Other
         // Territory. The template's dropdown omits 96, but it is accepted.
         "pos_code_range" => {
-            let code: u32 = text
+            // Range-checked on the WHOLE cell, not on the two-digit prefix the
+            // payload carries. The reference runs parseInt over the raw cell,
+            // so '37-Andhra Pradesh' reads as 37 while a bare '296' reads as
+            // 296 and is rejected — a distinction the prefix cannot make,
+            // since it would quietly turn '296' into Maharashtra.
+            let digits: String = raw
+                .trim()
+                .chars()
+                .take_while(|c| c.is_ascii_digit())
+                .collect();
+            let code: u32 = digits
                 .parse()
-                .map_err(|_| format!("'{}' is not a state code: '{text}'", field.column))?;
+                .map_err(|_| format!("'{}' is not a state code: '{raw}'", field.column))?;
             if (1..=38).contains(&code) || code == 96 || code == 97 {
                 Ok(())
             } else {
                 Err(format!(
-                    "'{}' is not a valid place of supply code: '{text}'",
+                    "'{}' is not a valid place of supply code: '{raw}'",
                     field.column
                 ))
             }
@@ -382,6 +398,43 @@ fn apply_constraint(
         "date_within_return_window" => {
             let parsed = parse_date(text)?;
             date::check_window(parsed, ctx.period).map_err(|e| describe_date_error(field, text, e))
+        }
+        // Floor only. The reference's `allowFuture` flag, which it passes for
+        // shipping bill dates — a bill raised after the invoice's return period
+        // has closed is the normal case for an export, not an error.
+        "date_not_before_gst" => {
+            let parsed = parse_date(text)?;
+            date::check_not_before_gst(parsed).map_err(|e| describe_date_error(field, text, e))
+        }
+        // An amendment cannot correct a period that has not been filed yet.
+        //
+        // The reference gets this from its financial-year dropdown, which it
+        // truncates to the current calendar month (returns.fct.js:175) — a
+        // wall-clock rule, so the same workbook validates differently next
+        // year. This engine has no clock, so it enforces the reproducible part:
+        // the amended year may not start after the filed period's own financial
+        // year. See the divergence note in the amendment specs.
+        "financial_year_not_after_period" => {
+            let named: i32 = text
+                .get(..4)
+                .and_then(|y| y.parse().ok())
+                .ok_or_else(|| format!("'{}' is not a financial year: '{text}'", field.column))?;
+            // A financial year runs April to March, so January to March belong
+            // to the year that started the previous April.
+            let period = ctx.period;
+            let current = if period.month >= 4 {
+                period.year
+            } else {
+                period.year - 1
+            };
+            if named <= current {
+                Ok(())
+            } else {
+                Err(format!(
+                    "'{}' is after the period being filed, so there is nothing to amend — found '{text}'",
+                    field.column
+                ))
+            }
         }
         other => Err(format!(
             "spec names constraint '{other}', which the engine does not implement"
@@ -438,6 +491,24 @@ fn to_cell(field: &Field, checked: &str) -> Result<Cell, String> {
                     )
                 })
         }
+        // Table 15's own label set, which differs from table 4's — its "Regular"
+        // is table 4's "Regular B2B", and it has no CBW at all.
+        //
+        // An unrecognized label maps to nothing rather than failing, because
+        // that is what the reference does: its lookup falls off the end and
+        // returns undefined, the `inv_typ` key drops out of the record, and the
+        // line is then taxed inter-state because the intra-state branch needs a
+        // code of R or DE. The template offers no dropdown for this column, so
+        // unrecognized labels are the common case, not the exceptional one.
+        // `ecom.unknown_document_type` warns about the silent reinterpretation.
+        Some("invoice_type_code_table15") => Ok(
+            match masters::invoice_type_code(&masters::INVOICE_TYPES.table15, checked) {
+                Some(code) => Cell::Text(code.to_owned()),
+                // Genuinely absent, not blank: the payload omits the key and
+                // every predicate that asks whether it is set gets `true`.
+                None => Cell::Empty,
+            },
+        ),
         // The enum check above already confirmed the label; map it to its code.
         Some("nil_supply_code") => masters::nil_supply_code(checked)
             .map(|code| Cell::Text(code.to_owned()))
@@ -532,6 +603,14 @@ pub fn evaluate(predicate: &Predicate, record: &Record) -> bool {
             values.iter().any(|v| v.matches_text(&text))
         }
         Predicate::Empty { field, empty } => record.get(field).is_empty() == *empty,
+        Predicate::Matches { field, pattern } => {
+            pattern_matches(pattern, &record.text(field)).unwrap_or(false)
+        }
+        Predicate::EqField { field, other } => match (record.number(field), record.number(other)) {
+            (Some(a), Some(b)) => a == b,
+            // A non-numeric side has already failed field validation.
+            _ => true,
+        },
         Predicate::GteField { field, other } => {
             match (record.number(field), record.number(other)) {
                 (Some(a), Some(b)) => a >= b,
@@ -568,6 +647,7 @@ mod tests {
             period: ReturnPeriod::new(7, 2017).unwrap(),
             is_sez: false,
             aato_over_5cr: false,
+            is_quarterly: false,
         }
     }
 

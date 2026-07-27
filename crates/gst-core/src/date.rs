@@ -131,13 +131,24 @@ pub fn from_excel_serial(serial: i64) -> Result<NaiveDate, DateError> {
 /// Check a parsed date against the reportable window: on or after 1 July 2017
 /// and no later than the end of the period being filed.
 pub fn check_window(date: NaiveDate, period: ReturnPeriod) -> Result<(), DateError> {
+    check_not_before_gst(date)?;
+    if date > period.last_day() {
+        return Err(DateError::AfterReturnPeriod);
+    }
+    Ok(())
+}
+
+/// The floor half of the window on its own: on or after 1 July 2017, with no
+/// upper bound.
+///
+/// The reference takes an `allowFuture` flag and passes it for shipping bill
+/// dates (`validateDate(..., true)`), whose whole point is that they can be
+/// raised after the invoice's own return period has closed.
+pub fn check_not_before_gst(date: NaiveDate) -> Result<(), DateError> {
     let (y, m, d) = GST_START;
     let start = NaiveDate::from_ymd_opt(y, m, d).expect("GST start is valid");
     if date < start {
         return Err(DateError::BeforeGst);
-    }
-    if date > period.last_day() {
-        return Err(DateError::AfterReturnPeriod);
     }
     Ok(())
 }
