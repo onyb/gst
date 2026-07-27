@@ -40,7 +40,10 @@
       "type": "text",
       "required": true,
       "enum_ref": "../masters/financial-years.json#/years",
-      "description": "Financial year of the period being amended."
+      "description": "Financial year of the period being amended.",
+      "constraints": [
+        "financial_year_not_after_period"
+      ]
     },
     {
       "id": "omonth",
@@ -58,9 +61,15 @@
       "type": "gstin",
       "required": true,
       "accepts": [
-        "eco"
+        "gstin",
+        "uin",
+        "tds",
+        "nrtp"
       ],
-      "description": "Operator's registration as originally reported."
+      "description": "Operator's registration as originally reported.",
+      "constraints": [
+        "gstin_checksum"
+      ]
     },
     {
       "id": "etin",
@@ -69,9 +78,15 @@
       "type": "gstin",
       "required": true,
       "accepts": [
-        "eco"
+        "gstin",
+        "uin",
+        "tds",
+        "nrtp"
       ],
-      "description": "Corrected operator registration."
+      "description": "Corrected operator registration.",
+      "constraints": [
+        "gstin_checksum"
+      ]
     },
     {
       "id": "cname",
@@ -89,7 +104,7 @@
       "order": 6,
       "type": "decimal",
       "required": true,
-      "pattern": "^(\\d{0,13})(\\.\\d{0,2})?$",
+      "pattern": "^(-?(\\d{0,11})(\\.\\d{0,2})?)$",
       "round_to": 2,
       "description": "Net value of supplies made through the operator."
     },
@@ -100,7 +115,7 @@
       "type": "decimal",
       "required": false,
       "default": 0,
-      "pattern": "^-?(\\d{0,11})(\\.\\d{0,2})?$",
+      "pattern": "^(-?(\\d{0,11})(\\.\\d{0,2})?)$",
       "round_to": 2,
       "description": "Integrated tax on those supplies. Entered directly rather than derived from a rate."
     },
@@ -111,7 +126,7 @@
       "type": "decimal",
       "required": false,
       "default": 0,
-      "pattern": "^-?(\\d{0,11})(\\.\\d{0,2})?$",
+      "pattern": "^(-?(\\d{0,11})(\\.\\d{0,2})?)$",
       "round_to": 2,
       "description": "Central tax on those supplies. Entered directly rather than derived from a rate."
     },
@@ -122,7 +137,7 @@
       "type": "decimal",
       "required": false,
       "default": 0,
-      "pattern": "^-?(\\d{0,11})(\\.\\d{0,2})?$",
+      "pattern": "^(-?(\\d{0,11})(\\.\\d{0,2})?)$",
       "round_to": 2,
       "description": "State/UT tax on those supplies. Entered directly rather than derived from a rate."
     },
@@ -133,13 +148,80 @@
       "type": "decimal",
       "required": false,
       "default": 0,
-      "pattern": "^-?(\\d{0,11})(\\.\\d{0,2})?$",
+      "pattern": "^(-?(\\d{0,11})(\\.\\d{0,2})?)$",
       "round_to": 2,
       "description": "Cess on those supplies. Entered directly rather than derived from a rate."
     }
   ],
-  "rules": [],
-  "grouping": {},
+  "rules": [
+    {
+      "id": "supecoa.igst_sign_agrees_with_net_value",
+      "description": "validateAllNegorAllPosPattern (returnStructure.js:5429): a positive net value of supplies forbids any negative tax, and a negative one forbids any positive tax. Either side being zero is fine.",
+      "assert": {
+        "field": "igst",
+        "sign_agrees_with": "suppval"
+      },
+      "message": "'Integrated tax' must have the same sign as 'Net value of supplies'"
+    },
+    {
+      "id": "supecoa.cgst_sign_agrees_with_net_value",
+      "description": "validateAllNegorAllPosPattern (returnStructure.js:5429): a positive net value of supplies forbids any negative tax, and a negative one forbids any positive tax. Either side being zero is fine.",
+      "assert": {
+        "field": "cgst",
+        "sign_agrees_with": "suppval"
+      },
+      "message": "'Central tax' must have the same sign as 'Net value of supplies'"
+    },
+    {
+      "id": "supecoa.sgst_sign_agrees_with_net_value",
+      "description": "validateAllNegorAllPosPattern (returnStructure.js:5429): a positive net value of supplies forbids any negative tax, and a negative one forbids any positive tax. Either side being zero is fine.",
+      "assert": {
+        "field": "sgst",
+        "sign_agrees_with": "suppval"
+      },
+      "message": "'State/UT tax' must have the same sign as 'Net value of supplies'"
+    },
+    {
+      "id": "supecoa.cess_sign_agrees_with_net_value",
+      "description": "validateAllNegorAllPosPattern (returnStructure.js:5429): a positive net value of supplies forbids any negative tax, and a negative one forbids any positive tax. Either side being zero is fine.",
+      "assert": {
+        "field": "cess",
+        "sign_agrees_with": "suppval"
+      },
+      "message": "'Cess' must have the same sign as 'Net value of supplies'"
+    },
+    {
+      "id": "supecoa.central_and_state_tax_must_match",
+      "description": "validateCgstSgstEqual, the third arm of validateAllNegorAllPosPattern: these tables state the two halves of an intra-state charge separately and the reference requires them equal.",
+      "assert": {
+        "field": "cgst",
+        "eq_field": "sgst"
+      },
+      "message": "'Central tax' and 'State/UT tax' must be equal"
+    },
+    {
+      "id": "supecoa.tcs_operator_gstin_carries_the_operator_marker",
+      "description": "For 'Liable to collect tax u/s 52(TCS)' rows only, the reference ANDs a second pattern requiring [cC] in the 13th position (returnStructure.js:6159) — the e-commerce operator marker. Rows liable to pay tax u/s 9(5) get no such test, which is why this is a rule rather than a narrower `accepts` on the field.",
+      "when": {
+        "field": "nat_supp",
+        "eq": "Liable to collect tax u/s 52(TCS)"
+      },
+      "assert": {
+        "field": "etin",
+        "matches": "^[0-9]{2}[a-zA-Z]{5}[0-9]{4}[a-zA-Z][1-9A-Za-z][cC][0-9a-zA-Z]$"
+      },
+      "message": "'GSTIN of E-Commerce Operator' must be an operator registration (C in the 13th position) for a row liable to collect tax u/s 52(TCS)"
+    }
+  ],
+  "grouping": {
+    "record_key": [
+      "nat_supp",
+      "oetin",
+      "fy",
+      "omonth"
+    ],
+    "record_conflict": "first_wins"
+  },
   "output": {
     "record": {
       "keys": [
@@ -195,7 +277,7 @@
   "notes": [
     {
       "kind": "quirk",
-      "text": "ONE SHEET FEEDS TWO MEMBERS of the payload object: Nature of Supply routes each row to 'clttxa' (tax collected under section 52) or 'paytxa' (tax paid under section 9(5)). The column itself is never emitted \u2014 it only decides where the record goes. No other section in the return splits this way.",
+      "text": "ONE SHEET FEEDS TWO MEMBERS of the payload object: Nature of Supply routes each row to 'clttxa' (tax collected under section 52) or 'paytxa' (tax paid under section 9(5)). The column itself is never emitted — it only decides where the record goes. No other section in the return splits this way.",
       "affects": [
         "nat_supp",
         "output"
@@ -216,6 +298,39 @@
       "text": "The operator name reaches the working file but is stripped before upload, exactly as the recipient name is for B2B and credit notes.",
       "affects": [
         "cname"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "Rows sharing (nat_supp, oetin, fy, omonth) are COLLAPSED, not summed: offline.js:11429 — matched on the original operator GSTIN and original month, per member, first row winning. fy+omonth stand in for the derived omon, which they determine exactly. Nothing about the sheet hints at this — the reference does it in addmltpldata on the way into its working file, not in the row mapping — so two legitimate-looking rows quietly become one. Reproduced, and reported as grouping.record_replaced.",
+      "affects": [
+        "output.record"
+      ]
+    },
+    {
+      "kind": "divergence",
+      "text": "The reference validates the financial year against a dropdown it builds at page load with `for (var i = YYYY; i >= 2018; i--)`, truncated to the current calendar month (returns.fct.js:175). That list therefore excludes 2017-18 and excludes anything after today — it is a function of the wall clock, and re-running the same workbook next year gives a different verdict. This engine takes no clock (see upload::filename, which is handed the date), so the reproducible half is enforced instead: the amended year may not be LATER than the year of the period being filed. The 2017-18 floor is NOT enforced, because GSTN's own sample CSVs for these tables are full of 2017-18 rows and rejecting them would fail the reference's own fixtures.",
+      "affects": [
+        "fy"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "Every registration number in these tables goes through the reference's full validateGSTIN (returnStructure.js:406) — a shape test for any of the four forms followed by the mod-36 check digit. The check digit had been missing here while b2b and cdnr carried it, so a mistyped operator or counterparty GSTIN was accepted.",
+      "affects": [
+        "oetin",
+        "etin"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "Every amount here may be NEGATIVE — these tables report a net figure that a period of returns can push below zero — and the reference's only cross-check is that the four tax amounts agree in sign with the net value, and that central and state tax are equal.",
+      "affects": [
+        "suppval",
+        "igst",
+        "cgst",
+        "sgst",
+        "cess"
       ]
     }
   ]

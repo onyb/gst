@@ -29,9 +29,14 @@
       "required": true,
       "accepts": [
         "gstin",
-        "uin"
+        "uin",
+        "tds",
+        "nrtp"
       ],
-      "description": "The supplier making the supply through the operator."
+      "description": "The supplier making the supply through the operator.",
+      "constraints": [
+        "gstin_checksum"
+      ]
     },
     {
       "id": "sname",
@@ -61,7 +66,7 @@
       "order": 3,
       "type": "decimal",
       "required": true,
-      "pattern": "^(\\d{0,11})(\\.\\d{0,2})?$",
+      "pattern": "^(-?(\\d{0,11})(\\.\\d{0,2})?)$",
       "round_to": 2,
       "description": "Taxable value at this rate, excluding tax."
     },
@@ -81,13 +86,20 @@
       "type": "decimal",
       "required": false,
       "default": 0,
-      "pattern": "^(\\d{0,11})(\\.\\d{0,2})?$",
+      "pattern": "^(-?(\\d{0,11})(\\.\\d{0,2})?)$",
       "round_to": 2,
-      "description": "Cess on this line. Must be an explicit 0 when there is none \u2014 see the quirk note."
+      "description": "Cess on this line. Must be an explicit 0 when there is none — see the quirk note."
     }
   ],
   "rules": [],
-  "grouping": {},
+  "grouping": {
+    "record_key": [
+      "pos",
+      "rt",
+      "stin"
+    ],
+    "record_conflict": "last_wins"
+  },
   "output": {
     "record": {
       "keys": [
@@ -147,7 +159,7 @@
   "notes": [
     {
       "kind": "quirk",
-      "text": "A BLANK CESS AMOUNT IS REPORTED AS A MISSING HEADER COLUMN. The reference checks each column's presence against the parsed ROW rather than the header row, and the spreadsheet reader omits blank cells \u2014 so an empty cess reads as an absent column, the row is rejected, and the error names the wrong problem entirely. Every row must carry an explicit 0. This implementation defaults a blank to 0, producing the same payload the reference gives an explicit 0.",
+      "text": "A BLANK CESS AMOUNT IS REPORTED AS A MISSING HEADER COLUMN. The reference checks each column's presence against the parsed ROW rather than the header row, and the spreadsheet reader omits blank cells — so an empty cess reads as an absent column, the row is rejected, and the error names the wrong problem entirely. Every row must carry an explicit 0. This implementation defaults a blank to 0, producing the same payload the reference gives an explicit 0.",
       "affects": [
         "csamt"
       ]
@@ -185,6 +197,28 @@
       "text": "A flat table: one payload record per row, with no invoice and no line items, because supplies to unregistered persons are reported in summary.",
       "affects": [
         "output"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "Rows sharing (pos, rt, stin) are COLLAPSED, not summed: offline.js:11513 — spliced in place on place of supply, rate and supplier GSTIN, so the later row wins. Nothing about the sheet hints at this — the reference does it in addmltpldata on the way into its working file, not in the row mapping — so two legitimate-looking rows quietly become one. Reproduced, and reported as grouping.record_replaced.",
+      "affects": [
+        "output.record"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "Every registration number in these tables goes through the reference's full validateGSTIN (returnStructure.js:406) — a shape test for any of the four forms followed by the mod-36 check digit. The check digit had been missing here while b2b and cdnr carried it, so a mistyped operator or counterparty GSTIN was accepted.",
+      "affects": [
+        "stin"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "The reference validates these through Math.abs(cnvt2Nm(...)) or a signed pattern, so a negative value is never itself a reason to reject. The B2C halves in particular report an aggregate that returns can push below zero.",
+      "affects": [
+        "csamt",
+        "txval"
       ]
     }
   ]

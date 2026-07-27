@@ -47,9 +47,14 @@
       "required": true,
       "accepts": [
         "gstin",
-        "uin"
+        "uin",
+        "tds",
+        "nrtp"
       ],
-      "description": "The supplier."
+      "description": "The supplier.",
+      "constraints": [
+        "gstin_checksum"
+      ]
     },
     {
       "id": "sname",
@@ -88,7 +93,7 @@
       "order": 6,
       "type": "decimal",
       "required": true,
-      "pattern": "^(\\d{0,11})(\\.\\d{0,2})?$",
+      "pattern": "^(-?(\\d{0,11})(\\.\\d{0,2})?)$",
       "round_to": 2,
       "description": "Corrected taxable value at this rate."
     },
@@ -99,9 +104,9 @@
       "type": "decimal",
       "required": false,
       "default": 0,
-      "pattern": "^(\\d{0,11})(\\.\\d{0,2})?$",
+      "pattern": "^(-?(\\d{0,11})(\\.\\d{0,2})?)$",
       "round_to": 2,
-      "description": "Cess on this line. Must be an explicit 0 when there is none \u2014 see the quirk note."
+      "description": "Cess on this line. Must be an explicit 0 when there is none — see the quirk note."
     }
   ],
   "rules": [],
@@ -216,7 +221,7 @@
   "notes": [
     {
       "kind": "quirk",
-      "text": "A BLANK CESS AMOUNT IS REPORTED AS A MISSING HEADER COLUMN \u2014 the presence check reads the parsed ROW, and blank cells are omitted by the reader. Every row needs an explicit 0. This implementation defaults a blank to 0 instead.",
+      "text": "A BLANK CESS AMOUNT IS REPORTED AS A MISSING HEADER COLUMN — the presence check reads the parsed ROW, and blank cells are omitted by the reader. Every row needs an explicit 0. This implementation defaults a blank to 0 instead.",
       "affects": [
         "csamt"
       ]
@@ -237,7 +242,7 @@
     },
     {
       "kind": "quirk",
-      "text": "The only section in the return that nests under 'posItms': the envelope groups by place of supply, and each entry holds the amended supplies for one supplier and period, which in turn hold the line items. Items here are BARE \u2014 no num and no itm_det wrapper \u2014 with the rate before the taxable value.",
+      "text": "The only section in the return that nests under 'posItms': the envelope groups by place of supply, and each entry holds the amended supplies for one supplier and period, which in turn hold the line items. Items here are BARE — no num and no itm_det wrapper — with the rate before the taxable value.",
       "affects": [
         "output"
       ]
@@ -247,6 +252,21 @@
       "text": "'ostin' repeats the value of 'stin'. The template has no original-supplier column, so an incorrectly reported supplier cannot actually be amended here; the key exists but can never differ.",
       "affects": [
         "stin"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "Every registration number in these tables goes through the reference's full validateGSTIN (returnStructure.js:406) — a shape test for any of the four forms followed by the mod-36 check digit. The check digit had been missing here while b2b and cdnr carried it, so a mistyped operator or counterparty GSTIN was accepted.",
+      "affects": [
+        "stin"
+      ]
+    },
+    {
+      "kind": "quirk",
+      "text": "The reference validates these through Math.abs(cnvt2Nm(...)) or a signed pattern, so a negative value is never itself a reason to reject. The B2C halves in particular report an aggregate that returns can push below zero.",
+      "affects": [
+        "csamt",
+        "txval"
       ]
     }
   ]
