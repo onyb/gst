@@ -165,6 +165,23 @@ its HSN summary while the test stayed green. Tests for envelope behaviour now
 drive the real pipeline, and one of them checks that every section the envelope
 names is actually registered.
 
+## The chunk splitter is specified against, not reproduced
+
+The reference's splitter (`utility/common.js` `exports.chunk`) is the one place
+this implementation deliberately does not reproduce observable behaviour,
+because that behaviour defeats the feature's own purpose: every chunk after the
+first loses the `gstin`/`fp`/`version`/`hash` header and cannot be uploaded,
+oversized sections outside five hardcoded cases are silently dropped, one path
+writes byte-identical duplicate chunks, and filenames carry `Math.random()`
+suffixes — so its output is neither usable nor capturable as a golden. The
+trigger and the size measure ARE faithful (`chunking` in
+`upload-envelope.json`: the 4.7 MiB float threshold and the double-stringified
+measure). The defect list and the divergence declaration live in that block
+(`chunking.reference_defects`, `chunking.divergence`); the split implemented
+here is correct by design — full header in every part, envelope-granularity
+splitting in envelope key order, union of parts equal to the unsplit file,
+deterministic `part{n}of{m}` names.
+
 ## Layout
 
 - `masters/` — shared fact tables: state codes, tax rate slabs, invoice

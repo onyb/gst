@@ -26,7 +26,20 @@
   },
   "chunking": {
     "max_bytes": 4928307,
-    "description": "The tool splits an upload into chunks at 4.7 MiB (4.7 * 1024 * 1024), not the 5 MB the portal documentation mentions."
+    "description": "The tool writes a single file iff the size it measures is strictly under 4.7 MiB (4.7 * 1024 * 1024 = 4928307.2, a float compared with <; offline.js:5474) — not the 5 MB the portal documentation mentions. The measure is jsonSize(JSON.stringify(gstfile)) over an ALREADY-SERIALIZED string: the body's UTF-8 length plus two enclosing quotes plus one escape byte per '\"' and '\\' in it, so real files split at roughly 3.9-4.1 MiB of actual JSON. At every integer measure, m <= 4928307 is equivalent to the reference's m < 4928307.2. There is NO item-count limit anywhere in the tool; the widely cited 19,000-invoice figure is portal folklore.",
+    "part_filename": {
+      "pattern": "returns_{generated_dmy}_R1_{gstin}_offline_part{part}of{parts}.json",
+      "description": "DELIBERATE DIVERGENCE. The reference names chunks returns_<dmy>_R1_<gstin>_offline_<secKey|others>_<random 1..100000>.json (utility/common.js exports.chunk) — a Math.random() suffix that can collide and silently overwrite a chunk, and is literally '_others_undefined.json' on one path. Parts here are numbered deterministically instead. The single-file name is unchanged and byte-identical."
+    },
+    "reference_defects": [
+      "The splitter re-serializes the whole accumulated chunk after every record it packs — O(n^2) in file size; the route disables the HTTP timeout to survive it.",
+      "Only b2b, b2ba, b2cl, b2cla and cdnr split at record granularity, and their records are packed in REVERSE document order.",
+      "Every chunk after the first accumulator flush LOSES the header: gstin, fp, gt, cur_gt, version and hash are zeroed and then removed by omit-empty, leaving chunks the portal cannot accept.",
+      "An oversized section outside the five splittable ones is silently DROPPED from the output.",
+      "A second oversized splittable section throws inside a swallowed catch and the request hangs forever.",
+      "One code path writes byte-identical duplicate chunk files, which the portal would reject as duplicate invoices."
+    ],
+    "divergence": "DELIBERATE DIVERGENCE from the reference splitter (precedent: the b2cl/b2cla blank-cess note in fixtures/golden/README.md). The trigger and the size measure are faithful; the split itself is correct by design instead of bug-for-bug, because the reference's chunked output is unusable for its own purpose: every part here is an independent complete payload carrying the full header (gstin, fp, gt/cur_gt when supplied, version, hash); sections pack in envelope key order and split at ENVELOPE granularity; the union of all parts' section contents equals the unsplit file; every part fits the measured limit; bodies and names are deterministic. A single envelope too large to fit a part alone is a hard error, never a silent drop."
   },
   "iff": {
     "description": "A quarterly (QRMP) filer submits an Invoice Furnishing Facility return in the first two months of each quarter, and it carries only these keys. The reference deletes every other top-level key outright (offline.js:5464), including gt and cur_gt, when isTPQ is set and the period's month is not a multiple of 3. Introduced in release 3.0.0 and applicable from 1 January 2021.",
