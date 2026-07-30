@@ -170,7 +170,13 @@ names is actually registered.
 - `masters/` — shared fact tables: state codes, tax rate slabs, invoice
   types, credit/debit note reasons
 - `gstr1/` — per-section field definitions, validation rules, import
-  mappings, payload shape (B2B, B2CL, B2CS, CDNR, EXP, AT, HSN, DOCS, …)
+  mappings, payload shape (B2B, B2CL, B2CS, CDNR, EXP, AT, HSN, DOCS, …).
+  Two standalone files describe whole-return behaviour rather than one
+  section: `upload-envelope.json` (the wrapper the portal expects around the
+  section payloads) and `summary.json` (the pre-upload View Summary table —
+  per-section counts and the four tax-head totals, with the official row
+  order, verbatim labels, credit-note sign flip and without-payment zeroing
+  rules)
 - `gstr3b/` — form table definitions (3.1, 3.1.1, 3.2, 4, 5, 5.1),
   cross-table rules, payload shape
 
