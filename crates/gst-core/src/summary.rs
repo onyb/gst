@@ -12,7 +12,7 @@ use rust_decimal::Decimal;
 use serde::Deserialize;
 use std::sync::LazyLock;
 
-use crate::payload::Json;
+use crate::payload::{Json, walk};
 use crate::spec;
 use crate::upload::{self, WorkbookRun};
 use crate::validate::FilingContext;
@@ -237,24 +237,6 @@ pub fn meta_json(summaries: &[SectionSummary], ctx: &FilingContext) -> Json {
         .collect();
     meta.insert_path("counts", Json::Arr(counts));
     meta
-}
-
-/// Every node reached from `root` by following `path`: a segment names an
-/// object member, an array fans out into its elements, a missing member
-/// contributes nothing. The empty path is the root itself.
-fn walk<'a>(root: &'a Json, path: &[String]) -> Vec<&'a Json> {
-    let mut nodes = vec![root];
-    for segment in path {
-        nodes = nodes
-            .iter()
-            .flat_map(|node| match node.get(segment) {
-                Some(Json::Arr(items)) => items.iter().collect(),
-                Some(other) => vec![other],
-                None => Vec::new(),
-            })
-            .collect();
-    }
-    nodes
 }
 
 fn field_matches(node: &Json, field: &str, values: &[String]) -> bool {
