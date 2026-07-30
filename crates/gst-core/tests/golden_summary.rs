@@ -10,21 +10,11 @@
 
 mod common;
 
-use gst_core::spec::Severity;
 use gst_core::summary::{meta_json, summarize};
-use gst_core::upload;
 
 fn build_meta(workbook: &str) -> String {
     let ctx = common::ctx(6, 2025);
-    let workbook = common::repo_path(workbook);
-
-    let run = upload::read_workbook(&workbook, &ctx).expect("workbook reads");
-    let errors: Vec<_> = run
-        .findings
-        .iter()
-        .filter(|f| f.severity == Severity::Error)
-        .collect();
-    assert!(errors.is_empty(), "workbook should be clean: {errors:?}");
+    let run = common::clean_run(workbook, &ctx);
     meta_json(&summarize(&run, &ctx), &ctx).to_json()
 }
 

@@ -6,31 +6,13 @@
 
 mod common;
 
-use gst_core::generate::{Generated, generate};
+use gst_core::generate::Generated;
 use gst_core::payload::Json;
 use gst_core::record::Row;
-use gst_core::spec::Severity;
 use gst_core::summary::{SectionSummary, meta_json, summarize};
 use gst_core::upload::WorkbookRun;
-use gst_core::validate::{FilingContext, validate};
+use gst_core::validate::FilingContext;
 use rust_decimal::Decimal;
-
-fn generated(code: &str, rows: &[Row], ctx: &FilingContext) -> Generated {
-    let spec = common::sec(code);
-    let report = validate(spec, rows, ctx);
-    assert!(
-        report.is_clean(),
-        "{code} validation: {:?}",
-        report.findings
-    );
-    let out = generate(spec, &report.records, ctx);
-    assert!(
-        !out.findings.iter().any(|f| f.severity == Severity::Error),
-        "{code} generation: {:?}",
-        out.findings
-    );
-    out
-}
 
 /// A run holding exactly the given sections — the shape `summarize` reads.
 fn run_of(entries: Vec<(&str, Generated)>) -> WorkbookRun {
@@ -42,8 +24,8 @@ fn run_of(entries: Vec<(&str, Generated)>) -> WorkbookRun {
 }
 
 fn summary_of(code: &str, rows: &[Row], ctx: &FilingContext) -> SectionSummary {
-    let run = run_of(vec![(code, generated(code, rows, ctx))]);
-    let mut rows = summarize(&run, ctx);
+    let out = common::generated(common::sec(code), rows, ctx);
+    let mut rows = summarize(&run_of(vec![(code, out)]), ctx);
     assert_eq!(rows.len(), 1, "expected one summary row: {rows:?}");
     rows.remove(0)
 }
@@ -378,7 +360,7 @@ fn rows_follow_the_official_order_not_the_registry_order() {
         ),
     ]);
     let summaries = summarize(&run, &common::ctx(6, 2025));
-    let order: Vec<&str> = summaries.iter().map(|s| s.cd.as_str()).collect();
+    let order: Vec<&str> = summaries.iter().map(|s| s.cd).collect();
     assert_eq!(order, ["b2b", "exp", "at", "supeco", "hsn(b2b)"]);
 }
 

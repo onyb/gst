@@ -18,15 +18,7 @@ use gst_core::upload::{self, Turnover};
 /// through the same pipeline `gst upload` runs.
 fn build_upload() -> String {
     let ctx = common::ctx(6, 2025);
-    let workbook = common::repo_path("fixtures/gstr1/demo-workbook.xlsx");
-
-    let run = upload::read_workbook(&workbook, &ctx).expect("workbook reads");
-    let errors: Vec<_> = run
-        .findings
-        .iter()
-        .filter(|f| f.severity == gst_core::spec::Severity::Error)
-        .collect();
-    assert!(errors.is_empty(), "workbook should be clean: {errors:?}");
+    let run = common::clean_run("fixtures/gstr1/demo-workbook.xlsx", &ctx);
     run.build(&ctx, Turnover::default()).to_json()
 }
 

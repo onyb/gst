@@ -118,14 +118,12 @@ pub fn reference_size(body: &str) -> usize {
     body.len() + 2 + body.bytes().filter(|b| *b == b'"' || *b == b'\\').count()
 }
 
-/// The `version` literal the reference stamps on every file it writes.
-pub fn version_literal() -> &'static str {
-    &ENVELOPE.version
-}
-
-/// The literal placeholder `hash` value the reference never fills in.
-pub fn hash_literal() -> &'static str {
-    &ENVELOPE.hash
+/// The envelope header alone — `{gstin, fp, version, hash}`, plus turnover
+/// when supplied. This is [`build`] over no sections: omit-empty drops every
+/// section key, leaving exactly the header the reference stamps on both the
+/// upload file and the summary meta sidecar.
+pub fn header(ctx: &FilingContext, turnover: Turnover) -> Json {
+    build(&HashMap::new(), ctx, turnover)
 }
 
 /// The filename the reference writes, e.g. `returns_2672026_R1_27AAA…_offline.json`.
@@ -173,6 +171,13 @@ impl WorkbookRun {
     /// The complete upload file for this run.
     pub fn build(&self, ctx: &FilingContext, turnover: Turnover) -> Json {
         build(&self.sections, ctx, turnover)
+    }
+
+    /// The findings that are errors. Mirrors `Report::errors`.
+    pub fn errors(&self) -> impl Iterator<Item = &Finding> {
+        self.findings
+            .iter()
+            .filter(|f| f.severity == crate::spec::Severity::Error)
     }
 }
 

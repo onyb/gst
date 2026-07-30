@@ -84,19 +84,30 @@ pub struct Constraint {
 impl Constraint {
     /// Whether this constraint applies to a return period, as YYYYMM.
     pub fn applies_to(&self, period_yyyymm: u32) -> bool {
-        let bound = |p: &Option<String>| p.as_deref().and_then(period_as_yyyymm);
-        if let Some(from) = bound(&self.from_period)
-            && period_yyyymm < from
-        {
-            return false;
-        }
-        if let Some(until) = bound(&self.until_period)
-            && period_yyyymm >= until
-        {
-            return false;
-        }
-        true
+        period_window(&self.from_period, &self.until_period, period_yyyymm)
     }
+}
+
+/// The one period-window convention every spec file uses: `from_period` is
+/// inclusive, `until_period` is exclusive (the period a change STARTS, e.g.
+/// the HSN bifurcation's 052025). Both bounds are MMYYYY.
+pub(crate) fn period_window(
+    from_period: &Option<String>,
+    until_period: &Option<String>,
+    period_yyyymm: u32,
+) -> bool {
+    let bound = |p: &Option<String>| p.as_deref().and_then(period_as_yyyymm);
+    if let Some(from) = bound(from_period)
+        && period_yyyymm < from
+    {
+        return false;
+    }
+    if let Some(until) = bound(until_period)
+        && period_yyyymm >= until
+    {
+        return false;
+    }
+    true
 }
 
 /// `MMYYYY` (as spec files and the portal write it) to comparable `YYYYMM`.

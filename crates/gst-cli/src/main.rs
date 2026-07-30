@@ -376,30 +376,37 @@ fn run_generate(workbook: &Path, filing: &SectionFiling, output: &Path) -> ExitC
 ///
 /// A section whose sheet is absent, or which has no rows, contributes nothing —
 /// the envelope still carries its key, empty, as the reference does.
-fn run_summary(workbook: &Path, filing: &Filing, format: Format) -> ExitCode {
-    let ctx = match context(filing) {
-        Ok(ctx) => ctx,
-        Err(e) => {
-            eprintln!("{e}");
-            return ExitCode::from(EXIT_UNUSABLE);
-        }
-    };
-
-    let run = match gst_core::upload::read_workbook(workbook, &ctx) {
-        Ok(run) => run,
-        Err(e) => {
-            eprintln!("{e}");
-            return ExitCode::from(EXIT_UNUSABLE);
-        }
-    };
-
+/// The prologue every whole-workbook command shares: resolve the filing
+/// context and read, validate and group every section. The workbook must have
+/// at least one section sheet with data. The `load` counterpart covers the
+/// single-section commands.
+fn load_workbook(
+    workbook: &Path,
+    filing: &Filing,
+) -> Result<(FilingContext, gst_core::upload::WorkbookRun), ExitCode> {
+    let ctx = context(filing).map_err(|e| {
+        eprintln!("{e}");
+        ExitCode::from(EXIT_UNUSABLE)
+    })?;
+    let run = gst_core::upload::read_workbook(workbook, &ctx).map_err(|e| {
+        eprintln!("{e}");
+        ExitCode::from(EXIT_UNUSABLE)
+    })?;
     if run.stats.is_empty() {
         eprintln!(
             "no section sheets with data found in {}",
             workbook.display()
         );
-        return ExitCode::from(EXIT_UNUSABLE);
+        return Err(ExitCode::from(EXIT_UNUSABLE));
     }
+    Ok((ctx, run))
+}
+
+fn run_summary(workbook: &Path, filing: &Filing, format: Format) -> ExitCode {
+    let (ctx, run) = match load_workbook(workbook, filing) {
+        Ok(loaded) => loaded,
+        Err(code) => return code,
+    };
 
     let summaries = gst_core::summary::summarize(&run, &ctx);
 
@@ -414,29 +421,30 @@ fn run_summary(workbook: &Path, filing: &Filing, format: Format) -> ExitCode {
                 workbook.display(),
                 ctx.period.as_mmyyyy()
             );
-            let width = summaries
-                .iter()
-                .map(|s| s.title.unwrap_or(&s.cd).len())
-                .max()
-                .unwrap_or(7)
-                .max(7);
-            println!(
-                "{:<width$} {:>6} {:>12} {:>12} {:>12} {:>12}",
-                "section", "count", "cgst", "sgst", "igst", "cess"
-            );
-            for s in &summaries {
-                println!(
-                    "{:<width$} {:>6} {:>12.2} {:>12.2} {:>12.2} {:>12.2}",
-                    s.title.unwrap_or(&s.cd),
-                    s.count,
-                    s.totals.cgst,
-                    s.totals.sgst,
-                    s.totals.igst,
-                    s.totals.cess
-                );
-            }
+            // Label rows with our own section titles; the official labels
+            // stay in the meta JSON.
+            let title = |s: &gst_core::summary::SectionSummary| {
+                gst_core::spec::section(s.cd).map_or(s.cd, |sec| sec.title.as_str())
+            };
             if summaries.is_empty() {
                 println!("(nothing to summarise)");
+            } else {
+                let width = summaries.iter().map(|s| title(s).len()).fold(7, usize::max);
+                println!(
+                    "{:<width$} {:>6} {:>12} {:>12} {:>12} {:>12}",
+                    "section", "count", "cgst", "sgst", "igst", "cess"
+                );
+                for s in &summaries {
+                    println!(
+                        "{:<width$} {:>6} {:>12.2} {:>12.2} {:>12.2} {:>12.2}",
+                        title(s),
+                        s.count,
+                        s.totals.cgst,
+                        s.totals.sgst,
+                        s.totals.igst,
+                        s.totals.cess
+                    );
+                }
             }
             // The reference page carries the same caveat.
             println!(
@@ -445,11 +453,7 @@ fn run_summary(workbook: &Path, filing: &Filing, format: Format) -> ExitCode {
         }
     }
 
-    let errors = run
-        .findings
-        .iter()
-        .filter(|f| f.severity == Severity::Error)
-        .count();
+    let errors = run.errors().count();
     if errors > 0 {
         eprintln!(
             "{errors} error(s) — rejected rows are excluded from these totals; run `gst validate --section <name>` to see them"
@@ -466,14 +470,6 @@ fn run_upload(
     cur_gt: Option<String>,
     output: &Path,
 ) -> ExitCode {
-    let ctx = match context(filing) {
-        Ok(ctx) => ctx,
-        Err(e) => {
-            eprintln!("{e}");
-            return ExitCode::from(EXIT_UNUSABLE);
-        }
-    };
-
     let parse_turnover = |flag: &str, raw: Option<String>| match raw {
         None => Ok(None),
         Some(text) => gst_core::validate::parse_amount(&text)
@@ -501,21 +497,10 @@ fn run_upload(
         }
     };
 
-    let run = match gst_core::upload::read_workbook(workbook, &ctx) {
-        Ok(run) => run,
-        Err(e) => {
-            eprintln!("{e}");
-            return ExitCode::from(EXIT_UNUSABLE);
-        }
+    let (ctx, run) = match load_workbook(workbook, filing) {
+        Ok(loaded) => loaded,
+        Err(code) => return code,
     };
-
-    if run.stats.is_empty() {
-        eprintln!(
-            "no section sheets with data found in {}",
-            workbook.display()
-        );
-        return ExitCode::from(EXIT_UNUSABLE);
-    }
 
     let body = run.build(&ctx, turnover).to_json();
 
@@ -547,11 +532,7 @@ fn run_upload(
 
     let read: usize = run.stats.iter().map(|s| s.rows).sum();
     let accepted: usize = run.stats.iter().map(|s| s.accepted).sum();
-    let errors = run
-        .findings
-        .iter()
-        .filter(|f| f.severity == Severity::Error)
-        .count();
+    let errors = run.errors().count();
     println!("\n{read} row(s) read, {accepted} accepted, {errors} error(s)");
 
     // Whole-sheet problems carry no row number and would otherwise be invisible

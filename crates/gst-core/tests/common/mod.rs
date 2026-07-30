@@ -7,7 +7,7 @@
 #![allow(dead_code)] // each test binary uses the subset it needs
 
 use gst_core::date::ReturnPeriod;
-use gst_core::generate::generate;
+use gst_core::generate::{Generated, generate};
 use gst_core::record::Row;
 use gst_core::spec::{self, SectionSpec};
 use gst_core::validate::{FilingContext, validate};
@@ -45,9 +45,9 @@ pub fn row(spec: &SectionSpec, sheet_row: usize, values: &[&str]) -> Row {
     Row::from_pairs(sheet_row, columns.into_iter().zip(values.iter().copied()))
 }
 
-/// Validate, assert clean, generate, assert clean, and return the payload
-/// JSON — the roundtrip contract every suite drives.
-pub fn payload(spec: &SectionSpec, rows: &[Row], ctx: &FilingContext) -> String {
+/// Validate, assert clean, generate, assert clean — the roundtrip contract
+/// every suite drives — and return the grouped output.
+pub fn generated(spec: &SectionSpec, rows: &[Row], ctx: &FilingContext) -> Generated {
     let report = validate(spec, rows, ctx);
     assert!(
         report.is_clean(),
@@ -62,7 +62,22 @@ pub fn payload(spec: &SectionSpec, rows: &[Row], ctx: &FilingContext) -> String 
         spec.section,
         out.findings
     );
-    out.to_json()
+    out
+}
+
+/// [`generated`], serialized — for the suites that compare payload JSON.
+pub fn payload(spec: &SectionSpec, rows: &[Row], ctx: &FilingContext) -> String {
+    generated(spec, rows, ctx).to_json()
+}
+
+/// Read a whole fixture workbook and assert it is error-free — the shared
+/// preamble of the golden differential suites.
+pub fn clean_run(workbook_rel: &str, ctx: &FilingContext) -> gst_core::upload::WorkbookRun {
+    let run =
+        gst_core::upload::read_workbook(&repo_path(workbook_rel), ctx).expect("workbook reads");
+    let errors: Vec<_> = run.errors().collect();
+    assert!(errors.is_empty(), "workbook should be clean: {errors:?}");
+    run
 }
 
 /// Repo-root-relative path, for fixtures.

@@ -13,7 +13,7 @@ use serde::Deserialize;
 use std::sync::LazyLock;
 
 use crate::payload::Json;
-use crate::spec::{self, period_as_yyyymm};
+use crate::spec;
 use crate::upload::{self, WorkbookRun};
 use crate::validate::FilingContext;
 
@@ -100,17 +100,7 @@ struct RowSpec {
 
 impl RowSpec {
     fn covers(&self, period: u32) -> bool {
-        let from_ok = self
-            .from_period
-            .as_deref()
-            .and_then(period_as_yyyymm)
-            .is_none_or(|p| period >= p);
-        let until_ok = self
-            .until_period
-            .as_deref()
-            .and_then(period_as_yyyymm)
-            .is_none_or(|p| period <= p);
-        from_ok && until_ok
+        spec::period_window(&self.from_period, &self.until_period, period)
     }
 }
 
@@ -151,22 +141,16 @@ impl Totals {
 #[derive(Debug, Clone)]
 pub struct SectionSummary {
     /// Section code, equal to the official meta `cd`.
-    pub cd: String,
+    pub cd: &'static str,
     /// The official tool's label, verbatim — typos included.
-    pub name: String,
-    /// Our own section title, for human-facing display.
-    pub title: Option<&'static str>,
+    pub name: &'static str,
     pub count: usize,
     pub totals: Totals,
 }
 
-/// Every declared summary row as `(cd, excluded)`, for coverage checks.
-pub fn covered_sections() -> Vec<(&'static str, bool)> {
-    SUMMARY
-        .rows
-        .iter()
-        .map(|row| (row.cd.as_str(), row.excluded))
-        .collect()
+/// Every declared summary row's section code, for coverage checks.
+pub fn covered_sections() -> impl Iterator<Item = &'static str> {
+    SUMMARY.rows.iter().map(|row| row.cd.as_str())
 }
 
 /// Compute the summary rows for one workbook run.
@@ -185,24 +169,28 @@ pub fn summarize(run: &WorkbookRun, ctx: &FilingContext) -> Vec<SectionSummary> 
             continue;
         };
         let keys = row.amount_keys.as_ref().unwrap_or(&SUMMARY.amount_keys);
+        let hits = |z: &&Zero, holder: &Json| {
+            field_matches(holder, &z.field, std::slice::from_ref(&z.equals))
+        };
         let mut count = 0;
         let mut totals = Totals::default();
         for envelope in &generated.envelopes {
+            // An envelope-level zero rule is invariant across the nodes below.
+            let envelope_zero = row
+                .zero
+                .as_ref()
+                .filter(|z| z.at == At::Envelope && hits(z, envelope));
             for node in walk(envelope, &row.count) {
                 count += 1;
                 let negate = row
                     .negate
                     .as_ref()
                     .is_some_and(|n| field_matches(node, &n.field, &n.values));
-                let zeroed: &[Column] = row
-                    .zero
-                    .as_ref()
-                    .filter(|z| {
-                        let holder = match z.at {
-                            At::Count => node,
-                            At::Envelope => envelope,
-                        };
-                        field_matches(holder, &z.field, std::slice::from_ref(&z.equals))
+                let zeroed: &[Column] = envelope_zero
+                    .or_else(|| {
+                        row.zero
+                            .as_ref()
+                            .filter(|z| z.at == At::Count && hits(z, node))
                     })
                     .map_or(&[], |z| &z.columns);
                 for amounts in walk(node, &row.amounts) {
@@ -212,9 +200,8 @@ pub fn summarize(run: &WorkbookRun, ctx: &FilingContext) -> Vec<SectionSummary> 
         }
         if count > 0 {
             out.push(SectionSummary {
-                cd: row.cd.clone(),
-                name: row.name.clone(),
-                title: spec::section(&row.cd).map(|s| s.title.as_str()),
+                cd: &row.cd,
+                name: &row.name,
                 count,
                 totals,
             });
@@ -229,11 +216,9 @@ pub fn summarize(run: &WorkbookRun, ctx: &FilingContext) -> Vec<SectionSummary> 
 /// Turnover (`gt`/`cur_gt`) appears in the reference's meta only when the
 /// working file carries it; this engine summarises without turnover.
 pub fn meta_json(summaries: &[SectionSummary], ctx: &FilingContext) -> Json {
-    let mut meta = Json::obj();
-    meta.insert_path("gstin", Json::Str(ctx.supplier_gstin.clone()));
-    meta.insert_path("fp", Json::Str(ctx.period.as_mmyyyy()));
-    meta.insert_path("version", Json::Str(upload::version_literal().to_owned()));
-    meta.insert_path("hash", Json::Str(upload::hash_literal().to_owned()));
+    // The reference copies the working file's header keys and appends counts;
+    // the envelope spec already owns that header.
+    let mut meta = upload::header(ctx, upload::Turnover::default());
     let counts = summaries
         .iter()
         .map(|s| {
@@ -243,10 +228,10 @@ pub fn meta_json(summaries: &[SectionSummary], ctx: &FilingContext) -> Json {
             result.insert_path("igTl", Json::Num(s.totals.igst));
             result.insert_path("csTl", Json::Num(s.totals.cess));
             let mut entry = Json::obj();
-            entry.insert_path("cd", Json::Str(s.cd.clone()));
+            entry.insert_path("cd", Json::Str(s.cd.to_owned()));
             entry.insert_path("result", result);
             entry.insert_path("count", Json::Num(Decimal::from(s.count as u64)));
-            entry.insert_path("name", Json::Str(s.name.clone()));
+            entry.insert_path("name", Json::Str(s.name.to_owned()));
             entry
         })
         .collect();
@@ -310,8 +295,10 @@ fn accumulate(
         let contribution = if negate { -*value } else { *value };
         let slot = totals.slot(column);
         *slot = round2(*slot + contribution);
-        // The reference's parseFloat(toFixed(2)) turns a JS -0 into +0 at
-        // every step, so a credit note cancelling a debit shows 0, not -0.
+        // A credit cancelling a debit leaves Decimal's negative zero, which
+        // Display renders as "-0.00" in the CLI table. (Serialization is safe
+        // regardless — normalize() clears the sign of zero.) The reference's
+        // parseFloat(toFixed(2)) lands on +0 the same way.
         if slot.is_zero() {
             *slot = Decimal::ZERO;
         }
@@ -352,24 +339,20 @@ mod tests {
 
     #[test]
     fn accumulation_rounds_negates_and_skips_missing_keys() {
-        let keys = AmountKeys {
-            cgst: "camt".into(),
-            sgst: "samt".into(),
-            igst: "iamt".into(),
-            cess: "csamt".into(),
-        };
+        // The spec's default alias set is exactly camt/samt/iamt/csamt.
+        let keys = &SUMMARY.amount_keys;
         let mut totals = Totals::default();
         accumulate(
             &mut totals,
             &item(&[("camt", 90), ("samt", 90)]),
-            &keys,
+            keys,
             false,
             &[],
         );
         accumulate(
             &mut totals,
             &item(&[("iamt", 100), ("csamt", 5)]),
-            &keys,
+            keys,
             true,
             &[],
         );
@@ -382,7 +365,7 @@ mod tests {
         accumulate(
             &mut zeroed,
             &item(&[("iamt", 100), ("csamt", 5), ("camt", 7)]),
-            &keys,
+            keys,
             false,
             &[Column::Igst, Column::Cess],
         );
@@ -393,24 +376,19 @@ mod tests {
 
     #[test]
     fn a_cancelled_total_is_positive_zero_like_the_reference() {
-        let keys = AmountKeys {
-            cgst: "camt".into(),
-            sgst: "samt".into(),
-            igst: "iamt".into(),
-            cess: "csamt".into(),
-        };
+        let keys = &SUMMARY.amount_keys;
         let mut totals = Totals::default();
-        accumulate(&mut totals, &item(&[("csamt", 500)]), &keys, true, &[]);
-        accumulate(&mut totals, &item(&[("csamt", 500)]), &keys, false, &[]);
-        // JS parseFloat(toFixed(2)) collapses -0 to +0 each step; a Decimal
-        // negative zero would otherwise serialize as "-0".
-        assert_eq!(Json::Num(totals.cess).to_json(), "0");
+        accumulate(&mut totals, &item(&[("csamt", 500)]), keys, true, &[]);
+        accumulate(&mut totals, &item(&[("csamt", 500)]), keys, false, &[]);
+        // Without the collapse, Decimal's negative zero Displays as "-0.00"
+        // in the CLI table.
+        assert_eq!(format!("{:.2}", totals.cess), "0.00");
     }
 
     #[test]
-    fn period_gates_read_mmyyyy() {
+    fn period_gates_are_from_inclusive_until_exclusive() {
         let row: RowSpec = serde_json::from_str(
-            r#"{"cd":"x","name":"x","from_period":"012024","until_period":"042025"}"#,
+            r#"{"cd":"x","name":"x","from_period":"012024","until_period":"052025"}"#,
         )
         .unwrap();
         assert!(!row.covers(202312));
