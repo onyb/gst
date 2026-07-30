@@ -534,6 +534,144 @@ pub fn chunks(
     })
 }
 
+/// A whole upload reassembled from its parts.
+#[derive(Debug, Clone)]
+pub struct MergedParts {
+    pub whole: Json,
+    /// Anomalies tolerated during the merge — a part missing its header, say.
+    /// Notes never make the merge fail.
+    pub notes: Vec<String>,
+}
+
+/// Why a set of parts could not be reassembled into one upload.
+#[derive(Debug)]
+pub enum MergeError {
+    /// A header scalar disagrees between parts — these are not parts of the
+    /// same return.
+    HeaderConflict {
+        key: String,
+        first: String,
+        conflicting: String,
+    },
+    /// The same location holds structurally different values in two parts.
+    ShapeConflict { path: String },
+}
+
+impl std::fmt::Display for MergeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MergeError::HeaderConflict {
+                key,
+                first,
+                conflicting,
+            } => write!(
+                f,
+                "the parts disagree on '{key}' ({first} vs {conflicting}) — not parts of one return"
+            ),
+            MergeError::ShapeConflict { path } => {
+                write!(f, "the parts hold incompatible shapes at '{path}'")
+            }
+        }
+    }
+}
+
+impl std::error::Error for MergeError {}
+
+/// The keys the envelope draws from filing context or literals — the header
+/// every part repeats, as opposed to section content that unions.
+pub(crate) fn header_keys() -> Vec<&'static str> {
+    ENVELOPE
+        .keys
+        .iter()
+        .filter(|e| e.from.starts_with("context:") || e.from.starts_with("literal:"))
+        .map(|e| e.key.as_str())
+        .collect()
+}
+
+/// Reassemble a split upload — the inverse of [`chunks`], per the
+/// `chunking.divergence` invariant: section arrays concatenate, nested
+/// objects merge member-wise, and the header must agree everywhere. A part
+/// MISSING header keys is tolerated with a note rather than rejected,
+/// because the reference's own chunker loses the header from its second
+/// chunk onward; the first part carrying a key is authoritative.
+pub fn merge_parts(parts: Vec<Json>) -> Result<MergedParts, MergeError> {
+    let header = header_keys();
+    let mut whole = Json::obj();
+    let mut notes = Vec::new();
+
+    for (index, part) in parts.iter().enumerate() {
+        let Json::Obj(entries) = part else {
+            return Err(MergeError::ShapeConflict {
+                path: format!("part {}", index + 1),
+            });
+        };
+        for (key, value) in entries {
+            let Json::Obj(merged) = &mut whole else {
+                unreachable!("whole starts as an object")
+            };
+            let existing = merged.iter_mut().find(|(k, _)| k == key);
+            match existing {
+                None => merged.push((key.clone(), value.clone())),
+                Some((_, slot)) => {
+                    if header.contains(&key.as_str()) {
+                        if slot != value {
+                            return Err(MergeError::HeaderConflict {
+                                key: key.clone(),
+                                first: slot.to_json(),
+                                conflicting: value.to_json(),
+                            });
+                        }
+                    } else {
+                        merge_into(slot, value, key)?;
+                    }
+                }
+            }
+        }
+    }
+
+    // A part without the header it should repeat was not written by this
+    // implementation; say so once per part rather than failing the merge.
+    for (index, part) in parts.iter().enumerate() {
+        let missing: Vec<&str> = header
+            .iter()
+            .filter(|key| whole.get(key).is_some() && part.get(key).is_none())
+            .copied()
+            .collect();
+        if !missing.is_empty() {
+            notes.push(format!(
+                "part {} carries no {} — its header was taken from another part \
+                 (the reference's own splitter loses headers)",
+                index + 1,
+                missing.join("/")
+            ));
+        }
+    }
+
+    Ok(MergedParts { whole, notes })
+}
+
+fn merge_into(existing: &mut Json, add: &Json, path: &str) -> Result<(), MergeError> {
+    match (existing, add) {
+        (Json::Arr(a), Json::Arr(b)) => {
+            a.extend(b.iter().cloned());
+            Ok(())
+        }
+        (Json::Obj(a), Json::Obj(b)) => {
+            for (key, value) in b {
+                match a.iter_mut().find(|(k, _)| k == key) {
+                    None => a.push((key.clone(), value.clone())),
+                    Some((_, slot)) => merge_into(slot, value, &format!("{path}.{key}"))?,
+                }
+            }
+            Ok(())
+        }
+        (existing, add) if *existing == *add => Ok(()),
+        _ => Err(MergeError::ShapeConflict {
+            path: path.to_owned(),
+        }),
+    }
+}
+
 /// Section codes in the order their content appears in the upload file,
 /// derived from the envelope spec's key walk so the packer and [`build`]
 /// cannot disagree — txpd/txpda place atadj/atadja last, the HSN branch
@@ -1021,50 +1159,18 @@ mod tests {
         section_of(envelopes, members)
     }
 
-    /// Parse the parts and merge their non-header content: arrays
-    /// concatenate, nested objects (hsn, supeco, ecom, nil, doc_issue) merge
-    /// member by member. Header keys must be identical everywhere.
-    fn union(parts: &[String]) -> serde_json::Value {
-        fn merge_into(existing: &mut serde_json::Value, add: &serde_json::Value) {
-            match (existing, add) {
-                (serde_json::Value::Array(a), serde_json::Value::Array(b)) => {
-                    a.extend(b.iter().cloned());
-                }
-                (serde_json::Value::Object(a), serde_json::Value::Object(b)) => {
-                    for (k, v) in b {
-                        match a.get_mut(k) {
-                            None => {
-                                a.insert(k.clone(), v.clone());
-                            }
-                            Some(e) => merge_into(e, v),
-                        }
-                    }
-                }
-                (e, a) => assert_eq!(*e, *a, "conflicting scalar across parts"),
-            }
-        }
-
-        let mut merged = serde_json::Map::new();
-        for part in parts {
-            let value: serde_json::Value = serde_json::from_str(part).expect("part parses");
-            for (key, val) in value.as_object().expect("part is an object") {
-                match merged.get_mut(key) {
-                    None => {
-                        merged.insert(key.clone(), val.clone());
-                    }
-                    Some(existing)
-                        if matches!(
-                            key.as_str(),
-                            "gstin" | "fp" | "gt" | "cur_gt" | "version" | "hash"
-                        ) =>
-                    {
-                        assert_eq!(existing, val, "header key '{key}' differs across parts");
-                    }
-                    Some(existing) => merge_into(existing, val),
-                }
-            }
-        }
-        serde_json::Value::Object(merged)
+    /// The parts reassembled through the public API. The reassembled whole
+    /// should be BYTE-identical to the unsplit build: parts are prefixes in
+    /// envelope key order, so first-seen key order and concatenation order
+    /// both reproduce the original.
+    fn merged(bodies: &[String]) -> Json {
+        let parts = bodies
+            .iter()
+            .map(|body| crate::payload::parse(body).expect("part parses"))
+            .collect();
+        let merged = merge_parts(parts).expect("parts merge");
+        assert!(merged.notes.is_empty(), "{:?}", merged.notes);
+        merged.whole
     }
 
     #[test]
@@ -1125,11 +1231,10 @@ mod tests {
         let c = ctx(6, 2025);
         let chunked = chunks(&sections, &c, Turnover::default()).unwrap();
         assert!(chunked.bodies.len() >= 2);
-        let whole: serde_json::Value =
-            serde_json::from_str(&build(&sections, &c, Turnover::default()).to_json()).unwrap();
+        let whole = build(&sections, &c, Turnover::default()).to_json();
         // The object-valued keys (nil, hsn, supeco) and the renamed txpd merge
         // back together with everything else.
-        assert_eq!(union(&chunked.bodies), whole);
+        assert_eq!(merged(&chunked.bodies).to_json(), whole);
     }
 
     #[test]
@@ -1169,9 +1274,8 @@ mod tests {
         let c = ctx(6, 2025);
         let chunked = chunks(&sections, &c, Turnover::default()).unwrap();
         assert!(chunked.bodies.len() >= 2);
-        let whole: serde_json::Value =
-            serde_json::from_str(&build(&sections, &c, Turnover::default()).to_json()).unwrap();
-        assert_eq!(union(&chunked.bodies), whole);
+        let whole = build(&sections, &c, Turnover::default()).to_json();
+        assert_eq!(merged(&chunked.bodies).to_json(), whole);
         // And no part mixes a record into the wrong member.
         for body in &chunked.bodies {
             let part: serde_json::Value = serde_json::from_str(body).unwrap();
@@ -1221,9 +1325,8 @@ mod tests {
         for body in &chunked.bodies {
             assert!(!body.contains(r#""b2cs""#), "IFF drops b2cs");
         }
-        let whole: serde_json::Value =
-            serde_json::from_str(&build(&sections, &c, Turnover::default()).to_json()).unwrap();
-        assert_eq!(union(&chunked.bodies), whole);
+        let whole = build(&sections, &c, Turnover::default()).to_json();
+        assert_eq!(merged(&chunked.bodies).to_json(), whole);
     }
 
     #[test]
@@ -1234,6 +1337,53 @@ mod tests {
         let a = chunks(&sections, &c, Turnover::default()).unwrap();
         let b = chunks(&sections, &c, Turnover::default()).unwrap();
         assert_eq!(a.bodies, b.bodies);
+    }
+
+    #[test]
+    fn parts_missing_their_header_merge_with_a_note() {
+        let mut sections = HashMap::new();
+        sections.insert("b2b".to_owned(), bulk("b2b", 6, 1_000_000));
+        let c = ctx(7, 2017);
+        let chunked = chunks(&sections, &c, Turnover::default()).unwrap();
+        assert!(chunked.bodies.len() >= 2);
+
+        // Strip the header from every part after the first — the shape the
+        // reference's own broken splitter produces.
+        let mut parts: Vec<Json> = chunked
+            .bodies
+            .iter()
+            .map(|body| crate::payload::parse(body).unwrap())
+            .collect();
+        for part in parts.iter_mut().skip(1) {
+            if let Json::Obj(entries) = part {
+                entries.retain(|(k, _)| !["gstin", "fp", "version", "hash"].contains(&k.as_str()));
+            }
+        }
+        let merged = merge_parts(parts).expect("still merges");
+        assert_eq!(
+            merged.notes.len(),
+            chunked.bodies.len() - 1,
+            "{:?}",
+            merged.notes
+        );
+        assert_eq!(
+            merged.whole.to_json(),
+            build(&sections, &c, Turnover::default()).to_json()
+        );
+    }
+
+    #[test]
+    fn parts_of_different_returns_refuse_to_merge() {
+        let part = |fp: &str| {
+            crate::payload::parse(&format!(
+                r#"{{"gstin":"27AAPFU0939F1ZV","fp":"{fp}","version":"GST3.2.4","hash":"hash","b2b":[]}}"#
+            ))
+            .unwrap()
+        };
+        match merge_parts(vec![part("062025"), part("072025")]) {
+            Err(MergeError::HeaderConflict { key, .. }) => assert_eq!(key, "fp"),
+            other => panic!("{other:?}"),
+        }
     }
 
     #[test]
