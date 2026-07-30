@@ -15,6 +15,10 @@ use std::collections::BTreeSet;
 
 use serde_json::Value;
 
+/// Whole-return documents with their own shapes, not section specs — the
+/// meta-schema does not describe them and they register no section code.
+const NON_SECTION_FILES: [&str; 2] = ["upload-envelope.json", "summary.json"];
+
 /// Property names declared at a schema location, when that location closes
 /// itself to anything else. `None` means the schema allows extra keys there and
 /// there is nothing to check.
@@ -102,8 +106,7 @@ fn every_section_spec_uses_only_declared_vocabulary() {
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or_default();
-        // The envelope is a different document with its own shape.
-        if !name.ends_with(".json") || name == "upload-envelope.json" {
+        if !name.ends_with(".json") || NON_SECTION_FILES.contains(&name) {
             continue;
         }
         let spec: Value =
@@ -137,7 +140,7 @@ fn every_spec_file_is_registered() {
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or_default();
-        if !name.ends_with(".json") || name == "upload-envelope.json" {
+        if !name.ends_with(".json") || NON_SECTION_FILES.contains(&name) {
             continue;
         }
         let spec: Value =
