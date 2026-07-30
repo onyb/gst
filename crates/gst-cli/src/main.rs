@@ -513,23 +513,46 @@ fn run_upload(
         Err(code) => return code,
     };
 
-    let body = run.build(&ctx, turnover).to_json();
+    let chunked = match run.chunks(&ctx, turnover) {
+        Ok(chunked) => chunked,
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::from(EXIT_PROBLEMS);
+        }
+    };
 
     if let Err(e) = std::fs::create_dir_all(output) {
         eprintln!("cannot create {}: {e}", output.display());
         return ExitCode::from(EXIT_UNUSABLE);
     }
-    let path = output.join(gst_core::upload::filename(
-        &ctx,
-        chrono::Local::now().date_naive(),
-    ));
-    if let Err(e) = std::fs::write(&path, &body) {
-        eprintln!("cannot write {}: {e}", path.display());
-        return ExitCode::from(EXIT_UNUSABLE);
+    let today = chrono::Local::now().date_naive();
+    let parts = chunked.bodies.len();
+    for (i, body) in chunked.bodies.iter().enumerate() {
+        let name = if parts == 1 {
+            gst_core::upload::filename(&ctx, today)
+        } else {
+            gst_core::upload::chunk_filename(&ctx, today, i + 1, parts)
+        };
+        let path = output.join(name);
+        if let Err(e) = std::fs::write(&path, body) {
+            eprintln!("cannot write {}: {e}", path.display());
+            return ExitCode::from(EXIT_UNUSABLE);
+        }
+        println!("{}", path.display());
+        if parts == 1 {
+            println!("{} bytes\n", body.len());
+        } else {
+            println!("{} bytes", body.len());
+        }
     }
-
-    println!("{}", path.display());
-    println!("{} bytes\n", body.len());
+    if parts > 1 {
+        println!(
+            "\nsplit into {parts} parts: the whole file measures {} bytes against the {} byte \
+             chunk limit (as the reference measures it) — upload each part separately\n",
+            chunked.unsplit_measure,
+            gst_core::upload::max_chunk_bytes()
+        );
+    }
     println!(
         "{:<8} {:>6} {:>9} {:>10}",
         "section", "rows", "accepted", "records"
@@ -557,19 +580,6 @@ fn run_upload(
         eprintln!("\n{}", finding.message);
     }
 
-    // Measured the way the reference measures it, which is not the file's own
-    // length — see upload::reference_size.
-    let limit = gst_core::upload::max_chunk_bytes();
-    let measured = gst_core::upload::reference_size(&body);
-    if measured > limit {
-        println!(
-            "NOTE: {} bytes ({} as the reference measures it) exceeds the {} byte chunk limit \
-             — splitting is not implemented yet",
-            body.len(),
-            measured,
-            limit
-        );
-    }
     if errors > 0 {
         eprintln!("run `gst validate --section <name>` to see the errors");
         return ExitCode::from(EXIT_PROBLEMS);
