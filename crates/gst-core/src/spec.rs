@@ -500,6 +500,13 @@ pub struct Grouping {
     /// sides and drops out of the comparison.
     #[serde(default)]
     pub invoice_key_global: bool,
+    /// Amendment sections only: the original document's identity. Two rows
+    /// sharing it must carry the same revised number — the reference keeps
+    /// the first and flags later conflicting rows (its multiItmErrData).
+    /// Empty for the sections that never check (cdnra, cdnura — verified by
+    /// capture).
+    #[serde(default)]
+    pub original_key: Vec<String>,
 }
 
 /// Where a payload key's content comes from.

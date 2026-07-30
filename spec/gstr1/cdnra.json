@@ -188,7 +188,7 @@
         {
           "name": "min_exclusive",
           "value": 0,
-          "description": "Must be strictly positive \u2014 a zero taxable value is rejected."
+          "description": "Must be strictly positive — a zero taxable value is rejected."
         }
       ],
       "description": "Corrected taxable value at this rate, excluding tax. Strictly positive.",
@@ -372,7 +372,7 @@
   "notes": [
     {
       "kind": "quirk",
-      "text": "Taxable value must be STRICTLY positive; note value and cess need only be non-negative. Nothing in this table may be negative \u2014 a credit note is distinguished by its note type.",
+      "text": "Taxable value must be STRICTLY positive; note value and cess need only be non-negative. Nothing in this table may be negative — a credit note is distinguished by its note type.",
       "affects": [
         "txval",
         "val",
@@ -396,7 +396,7 @@
     },
     {
       "kind": "quirk",
-      "text": "Nothing requires the revised note to postdate the original, or the revised date to fall in the period being filed \u2014 the routine that looks like it enforces date ordering is unreachable.",
+      "text": "Nothing requires the revised note to postdate the original, or the revised date to fall in the period being filed — the routine that looks like it enforces date ordering is unreachable.",
       "affects": [
         "ont_dt",
         "nt_dt"
@@ -412,8 +412,8 @@
       ]
     },
     {
-      "kind": "open_question",
-      "text": "The reference groups rows into one amendment when EITHER the revised or the original note number matches, then rejects the group on any other disagreement. Grouping here keys on the revised number alone, matching the tool's own declared key.",
+      "kind": "quirk",
+      "text": "SETTLED BY CAPTURE (2026-07-30): the reference does NOT apply either-number grouping here — two rows sharing the original note number but differing in revised number are both kept as separate notes, no error. Keying on the revised number alone matches.",
       "affects": [
         "ont_num",
         "nt_num"
@@ -428,14 +428,14 @@
     },
     {
       "kind": "quirk",
-      "text": "The internal 'diffval' flag never reaches the upload JSON \u2014 the reference deletes it alongside the tax-rate factor. This resolves what was previously an open question. Verified against a file captured from the tool.",
+      "text": "The internal 'diffval' flag never reaches the upload JSON — the reference deletes it alongside the tax-rate factor. This resolves what was previously an open question. Verified against a file captured from the tool.",
       "affects": [
         "output"
       ]
     },
     {
       "kind": "divergence",
-      "text": "Receiver Name is not length-checked in this section, so a name far beyond the 99 characters the reference allows elsewhere imports cleanly. This implementation applies the same 99-character pattern the other sections use. The field never reaches the portal in any case \u2014 it is stripped from the upload file \u2014 so the divergence costs nothing. Confirmed by differential test.",
+      "text": "Receiver Name is not length-checked in this section, so a name far beyond the 99 characters the reference allows elsewhere imports cleanly. This implementation applies the same 99-character pattern the other sections use. The field never reaches the portal in any case — it is stripped from the upload file — so the divergence costs nothing. Confirmed by differential test.",
       "affects": [
         "cname"
       ]

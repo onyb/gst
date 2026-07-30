@@ -127,9 +127,49 @@ pub fn generate(spec: &SectionSpec, records: &[Record], ctx: &FilingContext) -> 
     // that first claimed it.
     let mut global_invoices: HashMap<String, usize> = HashMap::new();
 
+    // Amendment sections: original identity to the revised number that first
+    // claimed it (and its row), scoped like the invoice key.
+    let mut original_claims: HashMap<(String, String), (String, usize)> = HashMap::new();
+
     for record in records {
         let env_key = group_key(spec, record, &spec.grouping.envelope_key);
         let inv_key = group_key(spec, record, &spec.grouping.invoice_key);
+
+        // One original document cannot take two revised numbers: the
+        // reference keeps the first row and flags the rest (verified by
+        // capture — multiItmErrData names the later revised number).
+        if !spec.grouping.original_key.is_empty() {
+            let orig_key = group_key(spec, record, &spec.grouping.original_key);
+            let scope = if spec.grouping.invoice_key_global {
+                String::new()
+            } else {
+                env_key.clone()
+            };
+            let claim = original_claims
+                .entry((scope, orig_key))
+                .or_insert_with(|| (inv_key.clone(), record.sheet_row));
+            if claim.0 != inv_key {
+                let column = spec
+                    .grouping
+                    .original_key
+                    .first()
+                    .and_then(|id| spec.field(id).map(|f| f.column.clone()))
+                    .unwrap_or_else(|| "original number".to_owned());
+                out.findings.push(Finding {
+                    sheet_row: record.sheet_row,
+                    column: Some(column),
+                    field: spec.grouping.original_key.first().cloned(),
+                    rule: Some("grouping.original_number_conflict".into()),
+                    severity: Severity::Error,
+                    message: format!(
+                        "row {} already amends this original document under a different \
+                         revised number — one original cannot take two revised numbers",
+                        claim.1
+                    ),
+                });
+                continue;
+            }
+        }
 
         // In global mode an invoice number already seen decides which envelope
         // this row belongs to, before any new envelope is opened.

@@ -229,6 +229,11 @@
         "invoice_key_global": {
           "type": "boolean",
           "description": "Match an invoice number across the whole section rather than within its envelope. Sections with no counterparty column do this in the reference, because the absent id normalises to '' on both sides of its comparison."
+        },
+        "original_key": {
+          "description": "Amendment sections: the original document identity. Rows sharing it must share the revised number; the reference keeps the first and rejects later conflicting rows (multiItmErrData). Scoped like the invoice key (global when invoice_key_global).",
+          "type": "array",
+          "items": { "type": "string" }
         }
       }
     },

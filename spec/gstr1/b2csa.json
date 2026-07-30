@@ -273,8 +273,8 @@
       ]
     },
     {
-      "kind": "open_question",
-      "text": "Nothing checks that the amended period precedes the period being filed. The reference only confirms the financial year and month exist in its own dropdown list, which is built from available periods, so an amendment pointing at a future month may be accepted here. The list itself is fixed and ends at 2027-28.",
+      "kind": "quirk",
+      "text": "SETTLED BY CAPTURE (2026-07-30): the reference accepts an amendment naming a FUTURE original period — February 2026 and even financial year 2026-27 pass a June 2025 import cleanly (omon reaches the working file). Only the dropdown pattern constrains the pair, exactly as this spec models.",
       "affects": [
         "fy",
         "omonth"

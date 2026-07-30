@@ -200,3 +200,39 @@ fn the_shipped_fixture_validates_and_generates() {
     assert!(json.contains(r#""diff_percent":0.65"#), "{json}");
     assert!(json.contains(r#""iamt":11700"#), "{json}");
 }
+
+#[test]
+fn one_original_cannot_take_two_revised_numbers() {
+    // Settled by capture: the reference keeps the first row and flags the
+    // later conflicting one (multiItmErrData), rather than rejecting both.
+    let first = base(5);
+    let conflicting = with(6, "Revised Invoice Number", "INV-001-R2");
+    let report = validate(b2ba(), &[first, conflicting], &september());
+    let out = generate(b2ba(), &report.records, &september());
+    let conflict: Vec<_> = out
+        .findings
+        .iter()
+        .filter(|f| f.rule.as_deref() == Some("grouping.original_number_conflict"))
+        .collect();
+    assert_eq!(conflict.len(), 1, "{:?}", out.findings);
+    assert_eq!(conflict[0].sheet_row, 6);
+    assert_eq!(conflict[0].severity, Severity::Error);
+    // The first amendment survives alone.
+    let json = out.to_json();
+    assert!(json.contains(r#""inum":"INV-001-R""#), "{json}");
+    assert!(!json.contains("INV-001-R2"), "{json}");
+}
+
+#[test]
+fn the_same_revised_number_still_groups_two_rate_lines() {
+    // Two rows of one amendment (different rates) are NOT an original-number
+    // conflict — the revised numbers agree.
+    let json = payload(
+        &[
+            base(5),
+            with(6, "Rate", "5").with_cell("Taxable Value", "60000"),
+        ],
+        &september(),
+    );
+    assert_eq!(json.matches(r#""inum""#).count(), 1, "{json}");
+}

@@ -134,3 +134,21 @@ fn the_shipped_fixture_validates_and_generates() {
     assert_eq!(json.matches(r#""ont_num""#).count(), 3, "{json}");
     assert!(json.contains(r#""diff_percent":0.65"#), "{json}");
 }
+
+#[test]
+fn two_revised_notes_may_amend_one_original() {
+    // Settled by capture: unlike b2ba/b2cla/expa, the reference applies no
+    // original-number check here — both notes are kept, no error.
+    let first = base(5);
+    let second = base(6)
+        .with_cell("Revised Note Number", "CN-001-R2")
+        .with_cell("Note Value", "59000");
+    let report = validate(cdnra(), &[first, second], &ctx());
+    let out = generate(cdnra(), &report.records, &ctx());
+    assert!(out.is_clean(), "{:?}", out.findings);
+    let json = out.to_json();
+    assert!(
+        json.contains("CN-001-R2") || json.matches(r#""nt_num""#).count() == 2,
+        "{json}"
+    );
+}

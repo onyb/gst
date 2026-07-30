@@ -72,7 +72,7 @@
         "date_within_return_window"
       ],
       "transform": "date_normalize",
-      "description": "Invoice date as originally reported. Usually falls in an earlier return period, which the window permits \u2014 it need only be on or after 1 July 2017."
+      "description": "Invoice date as originally reported. Usually falls in an earlier return period, which the window permits — it need only be on or after 1 July 2017."
     },
     {
       "id": "inum",
@@ -118,7 +118,7 @@
         "pos_code_range"
       ],
       "transform": "state_code_prefix",
-      "description": "Corrected place of supply as 'NN-Name'; only the numeric prefix is retained. Range-checked rather than matched against the state master \u2014 see the note on this in the unamended section."
+      "description": "Corrected place of supply as 'NN-Name'; only the numeric prefix is retained. Range-checked rather than matched against the state master — see the note on this in the unamended section."
     },
     {
       "id": "rchrg",
@@ -242,6 +242,9 @@
     ],
     "invoice_key": [
       "inum"
+    ],
+    "original_key": [
+      "oinum"
     ],
     "invoice_key_case_insensitive": true,
     "item_key": [
@@ -373,15 +376,15 @@
   "notes": [
     {
       "kind": "quirk",
-      "text": "Nothing requires the original invoice to predate the revision, or the revised date to fall in the period being filed. The routine that looks like it should enforce date ordering is unreachable \u2014 it returns true before any check runs \u2014 so an amendment dated before its own original is accepted.",
+      "text": "Nothing requires the original invoice to predate the revision, or the revised date to fall in the period being filed. The routine that looks like it should enforce date ordering is unreachable — it returns true before any check runs — so an amendment dated before its own original is accepted.",
       "affects": [
         "oidt",
         "idt"
       ]
     },
     {
-      "kind": "open_question",
-      "text": "The reference groups rows into one amendment when EITHER the revised number OR the original number matches, then rejects the group if any other invoice-level field disagrees. Grouping here keys on the revised number alone, so rows sharing an original number but differing in revised number become separate records where the reference would reject them. Which the portal accepts is untested. Rows sharing a revised number but differing in original number are caught either way, by the field-agreement check.",
+      "kind": "quirk",
+      "text": "SETTLED BY CAPTURE (2026-07-30): two rows sharing the original number but carrying different revised numbers are NOT grouped-and-rejected wholesale — the reference keeps the FIRST row and flags each later conflicting row as an error (multiItmErrData names the later revised number). grouping.original_key reproduces that: the first claim wins, later rows with a different revised number are rejected with grouping.original_number_conflict.",
       "affects": [
         "oinum",
         "inum"
@@ -389,7 +392,7 @@
     },
     {
       "kind": "quirk",
-      "text": "Two rows sharing this amendment's key and the same rate do not sum \u2014 the later row silently replaces the earlier one, exactly as in the unamended section.",
+      "text": "Two rows sharing this amendment's key and the same rate do not sum — the later row silently replaces the earlier one, exactly as in the unamended section.",
       "affects": [
         "rt",
         "txval"
@@ -419,7 +422,7 @@
     },
     {
       "kind": "quirk",
-      "text": "The internal 'diffval' flag never reaches the upload JSON \u2014 the reference deletes it alongside the tax-rate factor. This resolves what was previously an open question. Verified against a file captured from the tool.",
+      "text": "The internal 'diffval' flag never reaches the upload JSON — the reference deletes it alongside the tax-rate factor. This resolves what was previously an open question. Verified against a file captured from the tool.",
       "affects": [
         "output"
       ]

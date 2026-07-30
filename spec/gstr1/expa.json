@@ -190,6 +190,9 @@
     "invoice_key": [
       "inum"
     ],
+    "original_key": [
+      "oinum"
+    ],
     "invoice_key_case_insensitive": true,
     "item_key": [
       "rt"
@@ -341,8 +344,8 @@
       ]
     },
     {
-      "kind": "open_question",
-      "text": "The reference groups rows into one amendment when EITHER the revised or the original invoice number matches, then rejects the group on any other disagreement. Grouping here keys on the revised number alone. Same unresolved question as the other amendment sections.",
+      "kind": "quirk",
+      "text": "SETTLED BY CAPTURE (2026-07-30): two rows sharing the original number but carrying different revised numbers are NOT grouped-and-rejected wholesale — the reference keeps the FIRST row and flags each later conflicting row as an error (multiItmErrData names the later revised number). grouping.original_key reproduces that: the first claim wins, later rows with a different revised number are rejected with grouping.original_number_conflict.",
       "affects": [
         "oinum",
         "inum"

@@ -364,8 +364,8 @@
       ]
     },
     {
-      "kind": "open_question",
-      "text": "The reference groups rows into one amendment when EITHER the revised or the original note number matches, then rejects the group on any other disagreement. Grouping here keys on the revised number alone.",
+      "kind": "quirk",
+      "text": "SETTLED BY CAPTURE (2026-07-30): as with cdnra, both rows are kept and no error fires; keying on the revised number alone matches the reference.",
       "affects": [
         "ont_num",
         "nt_num"
