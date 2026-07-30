@@ -247,22 +247,19 @@ class Tool:
             count = sum(len(dig(work, path)) for path in fallback)
         return count
 
-    def verdict(self, workbook: Path, section: str) -> tuple[str, str]:
-        """'accept', 'reject', or 'crash' — the tool has unhandled paths that
-        hang the request rather than returning an error, and scoring those as
-        acceptances would hide a defect that is worse than either."""
+    def seed(self, workbook: Path) -> dict:
+        """Clean-slate import of one workbook into the tool's working store:
+        `/addtblfile` then `/addmltpldata`, the same two steps the golden
+        captures document. Returns the import response (per-section rejection
+        lists plus `cache_key`); raises on a hung or non-JSON import."""
         shutil.rmtree(self.work_dir, ignore_errors=True)
-        try:
-            with workbook.open("rb") as fh:
-                resp = requests.post(
-                    f"{self.base}/addtblfile",
-                    files={"file": (workbook.name, fh)},
-                    data={"shareData": self.share},
-                    timeout=30,
-                ).json()
-        except (requests.RequestException, ValueError):
-            return "crash", "import hung or returned nothing"
-        fired = ",".join(k for k, v in resp.items() if k != "cache_key" and v)
+        with workbook.open("rb") as fh:
+            resp = requests.post(
+                f"{self.base}/addtblfile",
+                files={"file": (workbook.name, fh)},
+                data={"shareData": self.share},
+                timeout=30,
+            ).json()
         requests.post(
             f"{self.base}/addmltpldata",
             json={
@@ -272,6 +269,17 @@ class Tool:
             },
             timeout=60,
         )
+        return resp
+
+    def verdict(self, workbook: Path, section: str) -> tuple[str, str]:
+        """'accept', 'reject', or 'crash' — the tool has unhandled paths that
+        hang the request rather than returning an error, and scoring those as
+        acceptances would hide a defect that is worse than either."""
+        try:
+            resp = self.seed(workbook)
+        except (requests.RequestException, ValueError):
+            return "crash", "import hung or returned nothing"
+        fired = ",".join(k for k, v in resp.items() if k != "cache_key" and v)
         if not self.work_file.exists():
             return "reject", fired or "no-working-file"
         kept = self.records(json.loads(self.work_file.read_text()), section)
