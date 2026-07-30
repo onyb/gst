@@ -47,8 +47,9 @@ description of the GST return formats that anyone can build on.
    and file as usual
 
 Use `gst generate --section <name>` instead when you want a single section's
-payload on its own. Returns above the tool's 4.7 MiB chunk threshold are not
-split yet.
+payload on its own. Returns above the tool's 4.7 MiB chunk threshold are
+split into numbered parts (`…_offline_part1of3.json`), each a complete
+upload file the portal accepts on its own — upload each part separately.
 
 Everything runs locally. The tool makes no network calls.
 

@@ -22,7 +22,8 @@ export const COMMANDS: CommandEntry[] = [
   {
     name: "upload",
     usage: "gst upload workbook.xlsx --gstin <GSTIN> --period <MMYYYY>",
-    description: "Write the complete portal upload file from one workbook.",
+    description:
+      "Write the complete portal upload file from one workbook, split into portal-sized parts when it is too large.",
     status: "ready",
   },
   {
