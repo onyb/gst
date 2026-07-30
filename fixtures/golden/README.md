@@ -9,6 +9,8 @@ instead of an assertion.
 | File | Captured from | Input |
 |---|---|---|
 | `gstr1-062025-reference.json` | tool V3.2.4, full import → generate chain | `fixtures/gstr1/demo-workbook.xlsx`, GSTIN `27AAPFU0939F1ZV`, period `062025` |
+| `gstr1-062025-meta.json` | tool V3.2.4, import → `/fetchMeta` summary recompute | `fixtures/gstr1/demo-workbook.xlsx`, same filer |
+| `gstr1-eco-062025-meta.json` | tool V3.2.4, import → `/fetchMeta` summary recompute | `fixtures/gstr1/eco-workbook.xlsx`, same filer |
 
 ## How it was captured
 
@@ -150,3 +152,23 @@ both of which will bite filers:
    reaches the payload. This is the quietest data loss found anywhere in the
    tool so far — the first probe workbook lost three of ten sections to it with
    a completely clean import report.
+
+## The summary sidecars
+
+`gstr1-062025-meta.json` and `gstr1-eco-062025-meta.json` are the `_meta.json`
+sidecars the tool writes when the View Summary page recomputes — captured with
+`scripts/capture_summary_meta.py`, which seeds the working store over HTTP
+(steps 1–2 above) and then POSTs `/fetchMeta`. The summary lives only in this
+sidecar; it never enters the upload file. No turnover was supplied, so no
+`gt`/`cur_gt` keys appear.
+
+Every count and total matched this implementation's `gst summary --format
+json` on the first capture. The one divergence the byte comparison caught was
+invisible in the source: the four table-15 row labels contain a NON-BREAKING
+SPACE (U+00A0) between `9(5)` and `- 15`, while the amended table-15A labels
+use a plain space. The summary spec now records the labels verbatim.
+
+`reformSummary` has payload-key fallbacks (`atadj`→`txpd`, the merged `ecom`/
+`ecoma`/`hsn` keys), so feeding it a generated upload file would also have
+worked; the working-store capture is the faithful one, since that is what the
+tool itself summarises.
