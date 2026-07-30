@@ -28,11 +28,14 @@ enum Command {
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
     },
-    /// Print section totals for a workbook (the pre-upload summary)
+    /// Print section counts and tax totals for a workbook (the pre-upload summary)
     Summary {
         workbook: PathBuf,
         #[command(flatten)]
-        filing: SectionFiling,
+        filing: Filing,
+        /// Output format: a table, or the reference tool's meta JSON shape
+        #[arg(long, value_enum, default_value_t = Format::Text)]
+        format: Format,
     },
     /// Generate the complete portal upload file from a whole workbook
     Upload {
@@ -129,9 +132,11 @@ fn main() -> ExitCode {
             cur_gt,
             output,
         } => run_upload(&workbook, &filing, gt, cur_gt, &output),
-        Command::Summary { .. } => {
-            unimplemented("summary", "the section total calculator is not built yet")
-        }
+        Command::Summary {
+            workbook,
+            filing,
+            format,
+        } => run_summary(&workbook, &filing, format),
         Command::Errors { .. } => unimplemented(
             "errors",
             "the portal error-file format is not specified yet",
@@ -371,6 +376,89 @@ fn run_generate(workbook: &Path, filing: &SectionFiling, output: &Path) -> ExitC
 ///
 /// A section whose sheet is absent, or which has no rows, contributes nothing —
 /// the envelope still carries its key, empty, as the reference does.
+fn run_summary(workbook: &Path, filing: &Filing, format: Format) -> ExitCode {
+    let ctx = match context(filing) {
+        Ok(ctx) => ctx,
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::from(EXIT_UNUSABLE);
+        }
+    };
+
+    let run = match gst_core::upload::read_workbook(workbook, &ctx) {
+        Ok(run) => run,
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::from(EXIT_UNUSABLE);
+        }
+    };
+
+    if run.stats.is_empty() {
+        eprintln!(
+            "no section sheets with data found in {}",
+            workbook.display()
+        );
+        return ExitCode::from(EXIT_UNUSABLE);
+    }
+
+    let summaries = gst_core::summary::summarize(&run, &ctx);
+
+    match format {
+        Format::Json => println!(
+            "{}",
+            gst_core::summary::meta_json(&summaries, &ctx).to_json()
+        ),
+        Format::Text => {
+            println!(
+                "{} — pre-upload summary for {}\n",
+                workbook.display(),
+                ctx.period.as_mmyyyy()
+            );
+            let width = summaries
+                .iter()
+                .map(|s| s.title.unwrap_or(&s.cd).len())
+                .max()
+                .unwrap_or(7)
+                .max(7);
+            println!(
+                "{:<width$} {:>6} {:>12} {:>12} {:>12} {:>12}",
+                "section", "count", "cgst", "sgst", "igst", "cess"
+            );
+            for s in &summaries {
+                println!(
+                    "{:<width$} {:>6} {:>12.2} {:>12.2} {:>12.2} {:>12.2}",
+                    s.title.unwrap_or(&s.cd),
+                    s.count,
+                    s.totals.cgst,
+                    s.totals.sgst,
+                    s.totals.igst,
+                    s.totals.cess
+                );
+            }
+            if summaries.is_empty() {
+                println!("(nothing to summarise)");
+            }
+            // The reference page carries the same caveat.
+            println!(
+                "\nNote: nil-rated (table 8) and documents-issued (table 13) sections carry\nno tax and are not summarised; their data still reaches the upload file."
+            );
+        }
+    }
+
+    let errors = run
+        .findings
+        .iter()
+        .filter(|f| f.severity == Severity::Error)
+        .count();
+    if errors > 0 {
+        eprintln!(
+            "{errors} error(s) — rejected rows are excluded from these totals; run `gst validate --section <name>` to see them"
+        );
+        return ExitCode::from(EXIT_PROBLEMS);
+    }
+    ExitCode::SUCCESS
+}
+
 fn run_upload(
     workbook: &Path,
     filing: &Filing,

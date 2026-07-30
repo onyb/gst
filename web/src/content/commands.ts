@@ -17,7 +17,7 @@ export const COMMANDS: CommandEntry[] = [
     name: "summary",
     usage: "gst summary workbook.xlsx --gstin <GSTIN> --period <MMYYYY>",
     description: "Print section totals before you upload.",
-    status: "planned",
+    status: "ready",
   },
   {
     name: "upload",

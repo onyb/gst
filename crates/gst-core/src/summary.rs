@@ -310,6 +310,11 @@ fn accumulate(
         let contribution = if negate { -*value } else { *value };
         let slot = totals.slot(column);
         *slot = round2(*slot + contribution);
+        // The reference's parseFloat(toFixed(2)) turns a JS -0 into +0 at
+        // every step, so a credit note cancelling a debit shows 0, not -0.
+        if slot.is_zero() {
+            *slot = Decimal::ZERO;
+        }
     }
 }
 
@@ -384,6 +389,22 @@ mod tests {
         assert_eq!(zeroed.igst, Decimal::ZERO);
         assert_eq!(zeroed.cess, Decimal::ZERO);
         assert_eq!(zeroed.cgst, Decimal::from(7));
+    }
+
+    #[test]
+    fn a_cancelled_total_is_positive_zero_like_the_reference() {
+        let keys = AmountKeys {
+            cgst: "camt".into(),
+            sgst: "samt".into(),
+            igst: "iamt".into(),
+            cess: "csamt".into(),
+        };
+        let mut totals = Totals::default();
+        accumulate(&mut totals, &item(&[("csamt", 500)]), &keys, true, &[]);
+        accumulate(&mut totals, &item(&[("csamt", 500)]), &keys, false, &[]);
+        // JS parseFloat(toFixed(2)) collapses -0 to +0 each step; a Decimal
+        // negative zero would otherwise serialize as "-0".
+        assert_eq!(Json::Num(totals.cess).to_json(), "0");
     }
 
     #[test]
