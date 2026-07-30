@@ -118,6 +118,16 @@ pub fn reference_size(body: &str) -> usize {
     body.len() + 2 + body.bytes().filter(|b| *b == b'"' || *b == b'\\').count()
 }
 
+/// The `version` literal the reference stamps on every file it writes.
+pub fn version_literal() -> &'static str {
+    &ENVELOPE.version
+}
+
+/// The literal placeholder `hash` value the reference never fills in.
+pub fn hash_literal() -> &'static str {
+    &ENVELOPE.hash
+}
+
 /// The filename the reference writes, e.g. `returns_2672026_R1_27AAA…_offline.json`.
 ///
 /// The date segment is the date the file was GENERATED — day, month and year
