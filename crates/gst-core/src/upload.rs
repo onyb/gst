@@ -50,6 +50,7 @@ struct Wrapped {
 #[derive(Debug, Clone, Deserialize)]
 struct Chunking {
     max_bytes: usize,
+    part_filename: Filename,
 }
 
 /// The reduced key set a quarterly filer's first two months carry.
@@ -126,24 +127,48 @@ pub fn header(ctx: &FilingContext, turnover: Turnover) -> Json {
     build(&HashMap::new(), ctx, turnover)
 }
 
+/// The reference's date segment: day, month and year, no zero padding.
+fn generated_dmy(generated_on: chrono::NaiveDate) -> String {
+    use chrono::Datelike;
+    format!(
+        "{}{}{}",
+        generated_on.day(),
+        generated_on.month(),
+        generated_on.year()
+    )
+}
+
 /// The filename the reference writes, e.g. `returns_2672026_R1_27AAA…_offline.json`.
 ///
 /// The date segment is the date the file was GENERATED — day, month and year
 /// concatenated with no zero padding — not the return period. The caller
 /// supplies it so the core stays free of a clock.
 pub fn filename(ctx: &FilingContext, generated_on: chrono::NaiveDate) -> String {
-    use chrono::Datelike;
-    let dmy = format!(
-        "{}{}{}",
-        generated_on.day(),
-        generated_on.month(),
-        generated_on.year()
-    );
     ENVELOPE
         .filename
         .pattern
-        .replace("{generated_dmy}", &dmy)
+        .replace("{generated_dmy}", &generated_dmy(generated_on))
         .replace("{gstin}", &ctx.supplier_gstin)
+}
+
+/// The name of one part of a split upload, 1-based `part` of `parts` —
+/// `returns_2672026_R1_27AAA…_offline_part2of3.json`. Deterministic where the
+/// reference uses a random suffix; see `chunking.part_filename` in the
+/// envelope spec for the recorded divergence.
+pub fn chunk_filename(
+    ctx: &FilingContext,
+    generated_on: chrono::NaiveDate,
+    part: usize,
+    parts: usize,
+) -> String {
+    ENVELOPE
+        .chunking
+        .part_filename
+        .pattern
+        .replace("{generated_dmy}", &generated_dmy(generated_on))
+        .replace("{gstin}", &ctx.supplier_gstin)
+        .replace("{part}", &part.to_string())
+        .replace("{parts}", &parts.to_string())
 }
 
 /// One section's contribution to a whole-workbook run.
@@ -178,6 +203,15 @@ impl WorkbookRun {
         self.findings
             .iter()
             .filter(|f| f.severity == crate::spec::Severity::Error)
+    }
+
+    /// The upload, split into portal-sized parts when it must be.
+    pub fn chunks(
+        &self,
+        ctx: &FilingContext,
+        turnover: Turnover,
+    ) -> Result<ChunkedUpload, ChunkError> {
+        chunks(&self.sections, ctx, turnover)
     }
 }
 
@@ -377,6 +411,199 @@ pub fn build(
             }
         }
         out.insert_path(&entry.key, value);
+    }
+    out
+}
+
+/// An upload split (or not) into portal-sized parts. Each body is an
+/// independent complete upload file: full header plus a subset of every
+/// section's records, in envelope key order.
+#[derive(Debug, Clone)]
+pub struct ChunkedUpload {
+    /// One serialized upload file per part; a single element iff the whole
+    /// return fits the reference's chunk limit.
+    pub bodies: Vec<String>,
+    /// [`reference_size`] of the unsplit file — the number the split decision
+    /// compared against the limit.
+    pub unsplit_measure: usize,
+}
+
+/// Why an upload could not be split into portal-sized parts.
+#[derive(Debug)]
+pub enum ChunkError {
+    /// One section envelope alone, with the header around it, exceeds the
+    /// chunk limit. The reference silently drops or hangs on this; here it is
+    /// a hard error so no data disappears.
+    EnvelopeTooLarge {
+        section: String,
+        /// Position within the section's envelopes.
+        index: usize,
+        measured: usize,
+        limit: usize,
+    },
+}
+
+impl std::fmt::Display for ChunkError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ChunkError::EnvelopeTooLarge {
+                section,
+                index,
+                measured,
+                limit,
+            } => write!(
+                f,
+                "a single '{section}' envelope (record {index}) measures {measured} bytes \
+                 against the {limit} byte chunk limit — no part can carry it; split its rows \
+                 across smaller documents in the workbook"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ChunkError {}
+
+/// Split a return into portal-sized parts when it is too large.
+///
+/// The single-file decision is the reference's: one file iff the
+/// double-stringified measure is under the 4.7 MiB limit, byte-identical to
+/// [`build`]. The split itself deliberately diverges from the reference's
+/// broken chunker (see `chunking.divergence` in the envelope spec): sections
+/// pack greedily in envelope key order, splitting at envelope granularity,
+/// and every part carries the full header. [`build`] itself prices each
+/// candidate part, so the packer can never disagree with the serializer about
+/// the IFF filter, the HSN branch, omit-empty or turnover.
+pub fn chunks(
+    sections: &HashMap<String, Generated>,
+    ctx: &FilingContext,
+    turnover: Turnover,
+) -> Result<ChunkedUpload, ChunkError> {
+    let whole = build(sections, ctx, turnover).to_json();
+    let unsplit_measure = reference_size(&whole);
+    let limit = max_chunk_bytes();
+    if unsplit_measure <= limit {
+        return Ok(ChunkedUpload {
+            bodies: vec![whole],
+            unsplit_measure,
+        });
+    }
+
+    // One unit per envelope, in the order their sections appear in the file.
+    let order = packing_order(ctx);
+    let mut units: Vec<(&str, usize)> = Vec::new();
+    for code in &order {
+        if let Some(generated) = sections.get(code) {
+            units.extend((0..generated.envelopes.len()).map(|i| (code.as_str(), i)));
+        }
+    }
+
+    let mut bodies = Vec::new();
+    let mut start = 0;
+    while start < units.len() {
+        let prefix = |end: usize| {
+            let body = build(&slice(sections, &units[start..end]), ctx, turnover).to_json();
+            (reference_size(&body), body)
+        };
+        let (first, _) = prefix(start + 1);
+        if first > limit {
+            let (section, index) = units[start];
+            return Err(ChunkError::EnvelopeTooLarge {
+                section: section.to_owned(),
+                index,
+                measured: first,
+                limit,
+            });
+        }
+        // The measure only grows as units are added, so the largest fitting
+        // prefix is found by binary search; lo always names a fitting end.
+        let (mut lo, mut hi) = (start + 1, units.len());
+        while lo < hi {
+            let mid = lo + (hi - lo).div_ceil(2);
+            if prefix(mid).0 <= limit {
+                lo = mid;
+            } else {
+                hi = mid - 1;
+            }
+        }
+        bodies.push(prefix(lo).1);
+        start = lo;
+    }
+    Ok(ChunkedUpload {
+        bodies,
+        unsplit_measure,
+    })
+}
+
+/// Section codes in the order their content appears in the upload file,
+/// derived from the envelope spec's key walk so the packer and [`build`]
+/// cannot disagree — txpd/txpda place atadj/atadja last, the HSN branch
+/// follows the bifurcation, and IFF-dropped keys contribute nothing.
+fn packing_order(ctx: &FilingContext) -> Vec<String> {
+    let spec = &*ENVELOPE;
+    let bifurcated = period_as_yyyymm(&spec.hsn_bifurcation_start_period)
+        .is_some_and(|start| ctx.period.as_yyyymm() >= start);
+    let iff = ctx.is_quarterly && !ctx.period.month.is_multiple_of(3);
+    let keeps = |key: &str| !iff || spec.iff.keep_keys.iter().any(|k| k == key);
+    let push = |order: &mut Vec<String>, code: &str| {
+        // supeco/supecoa name one section from two members; count it once.
+        if !order.iter().any(|c| c == code) {
+            order.push(code.to_owned());
+        }
+    };
+
+    let mut order = Vec::new();
+    for entry in &spec.keys {
+        if !keeps(&entry.key) {
+            continue;
+        }
+        match entry.from.as_str() {
+            "hsn" => {
+                if bifurcated {
+                    for member in &spec.hsn_from_bifurcation.members {
+                        if let Some(code) = member.from.strip_prefix("section:") {
+                            push(&mut order, code);
+                        }
+                    }
+                } else {
+                    push(&mut order, "hsn");
+                }
+            }
+            "object" => {
+                for member in &entry.members {
+                    if let Some(code) = member.from.strip_prefix("section:") {
+                        push(&mut order, code);
+                    }
+                }
+            }
+            other => {
+                // context:/literal:/empty: keys carry no section content.
+                if let Some(code) = other
+                    .strip_prefix("section:")
+                    .or_else(|| other.strip_prefix("wrapped:"))
+                {
+                    push(&mut order, code);
+                }
+            }
+        }
+    }
+    order
+}
+
+/// The subset of `sections` holding exactly the given envelopes, members
+/// sliced in lockstep. `generate` always keeps the two vectors the same
+/// length; hand-built values with no members stay member-less.
+fn slice(
+    sections: &HashMap<String, Generated>,
+    units: &[(&str, usize)],
+) -> HashMap<String, Generated> {
+    let mut out: HashMap<String, Generated> = HashMap::new();
+    for (code, index) in units {
+        let source = &sections[*code];
+        let target = out.entry((*code).to_owned()).or_default();
+        target.envelopes.push(source.envelopes[*index].clone());
+        if source.members.len() == source.envelopes.len() {
+            target.members.push(source.members[*index].clone());
+        }
     }
     out
 }
@@ -764,5 +991,258 @@ mod tests {
     fn the_chunk_threshold_is_the_tools_actual_limit() {
         // 4.7 MiB, not the 5 MB the portal documentation mentions.
         assert_eq!(max_chunk_bytes(), 4_928_307);
+    }
+
+    // ---- chunk splitting ----
+
+    /// A synthetic envelope of roughly `bytes` serialized size, tagged so
+    /// union checks can track every record across parts.
+    fn padded(id: &str, bytes: usize) -> Json {
+        let mut o = Json::obj();
+        o.insert_path("id", Json::Str(id.to_owned()));
+        o.insert_path("pad", Json::Str("A".repeat(bytes)));
+        o
+    }
+
+    fn section_of(envelopes: Vec<Json>, members: Vec<Option<String>>) -> Generated {
+        Generated {
+            envelopes,
+            members,
+            findings: vec![],
+        }
+    }
+
+    /// `n` untagged envelopes of ~`bytes` each, ids `code-0..n`.
+    fn bulk(code: &str, n: usize, bytes: usize) -> Generated {
+        let envelopes: Vec<Json> = (0..n)
+            .map(|i| padded(&format!("{code}-{i}"), bytes))
+            .collect();
+        let members = vec![None; n];
+        section_of(envelopes, members)
+    }
+
+    /// Parse the parts and merge their non-header content: arrays
+    /// concatenate, nested objects (hsn, supeco, ecom, nil, doc_issue) merge
+    /// member by member. Header keys must be identical everywhere.
+    fn union(parts: &[String]) -> serde_json::Value {
+        fn merge_into(existing: &mut serde_json::Value, add: &serde_json::Value) {
+            match (existing, add) {
+                (serde_json::Value::Array(a), serde_json::Value::Array(b)) => {
+                    a.extend(b.iter().cloned());
+                }
+                (serde_json::Value::Object(a), serde_json::Value::Object(b)) => {
+                    for (k, v) in b {
+                        match a.get_mut(k) {
+                            None => {
+                                a.insert(k.clone(), v.clone());
+                            }
+                            Some(e) => merge_into(e, v),
+                        }
+                    }
+                }
+                (e, a) => assert_eq!(*e, *a, "conflicting scalar across parts"),
+            }
+        }
+
+        let mut merged = serde_json::Map::new();
+        for part in parts {
+            let value: serde_json::Value = serde_json::from_str(part).expect("part parses");
+            for (key, val) in value.as_object().expect("part is an object") {
+                match merged.get_mut(key) {
+                    None => {
+                        merged.insert(key.clone(), val.clone());
+                    }
+                    Some(existing)
+                        if matches!(
+                            key.as_str(),
+                            "gstin" | "fp" | "gt" | "cur_gt" | "version" | "hash"
+                        ) =>
+                    {
+                        assert_eq!(existing, val, "header key '{key}' differs across parts");
+                    }
+                    Some(existing) => merge_into(existing, val),
+                }
+            }
+        }
+        serde_json::Value::Object(merged)
+    }
+
+    #[test]
+    fn an_under_limit_return_is_a_single_identical_chunk() {
+        let mut sections = HashMap::new();
+        sections.insert("b2b".to_owned(), bulk("b2b", 3, 1000));
+        let c = ctx(7, 2017);
+        let chunked = chunks(&sections, &c, Turnover::default()).unwrap();
+        let whole = build(&sections, &c, Turnover::default()).to_json();
+        assert_eq!(chunked.bodies, vec![whole.clone()]);
+        assert_eq!(chunked.unsplit_measure, reference_size(&whole));
+    }
+
+    #[test]
+    fn every_part_fits_and_carries_the_full_header() {
+        let mut sections = HashMap::new();
+        sections.insert("b2b".to_owned(), bulk("b2b", 8, 1_000_000));
+        let c = ctx(7, 2017);
+        let turnover = Turnover {
+            gross: Some(Decimal::from(5_000_000)),
+            current: Some(Decimal::from(1_200_000)),
+        };
+        let chunked = chunks(&sections, &c, turnover).unwrap();
+        assert!(
+            chunked.bodies.len() >= 2,
+            "{} part(s)",
+            chunked.bodies.len()
+        );
+        for body in &chunked.bodies {
+            assert!(reference_size(body) <= max_chunk_bytes());
+            // Full header — including the turnover pair — on EVERY part; the
+            // reference loses it from the second chunk onward.
+            assert!(
+                body.starts_with(
+                    r#"{"gstin":"27AAPFU0939F1ZV","fp":"072017","gt":5000000,"cur_gt":1200000,"version":"GST3.2.4","hash":"hash""#
+                ),
+                "{}",
+                &body[..120.min(body.len())]
+            );
+        }
+    }
+
+    #[test]
+    fn the_union_of_parts_equals_the_unsplit_file() {
+        let mut sections = HashMap::new();
+        sections.insert("b2b".to_owned(), bulk("b2b", 6, 900_000));
+        sections.insert("b2cs".to_owned(), bulk("b2cs", 4, 200_000));
+        sections.insert("atadj".to_owned(), bulk("atadj", 2, 100_000));
+        sections.insert("nil".to_owned(), bulk("nil", 1, 1000));
+        sections.insert("hsn(b2b)".to_owned(), bulk("hsnb", 2, 1000));
+        sections.insert(
+            "supeco".to_owned(),
+            section_of(
+                vec![padded("eco-0", 1000), padded("eco-1", 1000)],
+                vec![Some("clttx".to_owned()), Some("paytx".to_owned())],
+            ),
+        );
+        let c = ctx(6, 2025);
+        let chunked = chunks(&sections, &c, Turnover::default()).unwrap();
+        assert!(chunked.bodies.len() >= 2);
+        let whole: serde_json::Value =
+            serde_json::from_str(&build(&sections, &c, Turnover::default()).to_json()).unwrap();
+        // The object-valued keys (nil, hsn, supeco) and the renamed txpd merge
+        // back together with everything else.
+        assert_eq!(union(&chunked.bodies), whole);
+    }
+
+    #[test]
+    fn parts_pack_in_envelope_key_order() {
+        let mut sections = HashMap::new();
+        sections.insert("b2b".to_owned(), bulk("b2b", 2, 3_000_000));
+        sections.insert("b2cs".to_owned(), bulk("b2cs", 1, 1000));
+        sections.insert("atadj".to_owned(), bulk("atadj", 1, 1000));
+        let c = ctx(7, 2017);
+        let chunked = chunks(&sections, &c, Turnover::default()).unwrap();
+        assert_eq!(chunked.bodies.len(), 2);
+        // First part is the b2b prefix alone; the trailing sections — b2cs and
+        // atadj's renamed txpd — ride in the last part, in key order.
+        assert!(chunked.bodies[0].contains(r#""b2b""#));
+        assert!(!chunked.bodies[0].contains(r#""b2cs""#));
+        assert!(!chunked.bodies[0].contains(r#""txpd""#));
+        assert!(chunked.bodies[1].contains(r#""b2cs""#));
+        assert!(chunked.bodies[1].ends_with(r#"}]}"#) && chunked.bodies[1].contains(r#""txpd""#));
+        let b2cs_at = chunked.bodies[1].find(r#""b2cs""#).unwrap();
+        let txpd_at = chunked.bodies[1].find(r#""txpd""#).unwrap();
+        assert!(b2cs_at < txpd_at, "txpd must stay last");
+    }
+
+    #[test]
+    fn member_tagged_sections_stay_in_lockstep() {
+        // Alternating clttx/paytx rows big enough to force a split: each
+        // part's supeco object must carry exactly its slice's tags.
+        let n = 8;
+        let envelopes: Vec<Json> = (0..n)
+            .map(|i| padded(&format!("eco-{i}"), 900_000))
+            .collect();
+        let members: Vec<Option<String>> = (0..n)
+            .map(|i| Some(if i % 2 == 0 { "clttx" } else { "paytx" }.to_owned()))
+            .collect();
+        let mut sections = HashMap::new();
+        sections.insert("supeco".to_owned(), section_of(envelopes, members));
+        let c = ctx(6, 2025);
+        let chunked = chunks(&sections, &c, Turnover::default()).unwrap();
+        assert!(chunked.bodies.len() >= 2);
+        let whole: serde_json::Value =
+            serde_json::from_str(&build(&sections, &c, Turnover::default()).to_json()).unwrap();
+        assert_eq!(union(&chunked.bodies), whole);
+        // And no part mixes a record into the wrong member.
+        for body in &chunked.bodies {
+            let part: serde_json::Value = serde_json::from_str(body).unwrap();
+            for (member, prefix) in [("clttx", 0), ("paytx", 1)] {
+                for record in part["supeco"][member].as_array().into_iter().flatten() {
+                    let id = record["id"].as_str().unwrap();
+                    let i: usize = id.strip_prefix("eco-").unwrap().parse().unwrap();
+                    assert_eq!(i % 2, prefix, "{id} landed under {member}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn an_envelope_too_large_to_fit_is_a_hard_error() {
+        let mut sections = HashMap::new();
+        sections.insert("b2b".to_owned(), bulk("b2b", 1, 1000));
+        let mut big = bulk("b2cs", 3, 1000);
+        big.envelopes[1] = padded("b2cs-huge", 6_000_000);
+        sections.insert("b2cs".to_owned(), big);
+        let c = ctx(7, 2017);
+        let err = chunks(&sections, &c, Turnover::default()).unwrap_err();
+        match err {
+            ChunkError::EnvelopeTooLarge {
+                ref section, index, ..
+            } => {
+                assert_eq!(section, "b2cs");
+                assert_eq!(index, 1);
+            }
+        }
+        let message = err.to_string();
+        assert!(
+            message.contains("b2cs") && message.contains("4928307"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn iff_dropped_sections_never_reach_a_part() {
+        let mut sections = HashMap::new();
+        sections.insert("b2b".to_owned(), bulk("b2b", 8, 1_000_000));
+        sections.insert("b2cs".to_owned(), bulk("b2cs", 3, 500_000));
+        let mut c = ctx(7, 2025); // month 7: an IFF month for a quarterly filer
+        c.is_quarterly = true;
+        let chunked = chunks(&sections, &c, Turnover::default()).unwrap();
+        assert!(chunked.bodies.len() >= 2);
+        for body in &chunked.bodies {
+            assert!(!body.contains(r#""b2cs""#), "IFF drops b2cs");
+        }
+        let whole: serde_json::Value =
+            serde_json::from_str(&build(&sections, &c, Turnover::default()).to_json()).unwrap();
+        assert_eq!(union(&chunked.bodies), whole);
+    }
+
+    #[test]
+    fn chunking_is_deterministic() {
+        let mut sections = HashMap::new();
+        sections.insert("b2b".to_owned(), bulk("b2b", 7, 1_100_000));
+        let c = ctx(7, 2017);
+        let a = chunks(&sections, &c, Turnover::default()).unwrap();
+        let b = chunks(&sections, &c, Turnover::default()).unwrap();
+        assert_eq!(a.bodies, b.bodies);
+    }
+
+    #[test]
+    fn the_part_filename_numbers_the_parts() {
+        let c = ctx(6, 2025);
+        let date = chrono::NaiveDate::from_ymd_opt(2026, 7, 26).unwrap();
+        assert_eq!(
+            chunk_filename(&c, date, 2, 3),
+            "returns_2672026_R1_27AAPFU0939F1ZV_offline_part2of3.json"
+        );
     }
 }
