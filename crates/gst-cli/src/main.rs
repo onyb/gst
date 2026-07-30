@@ -106,9 +106,10 @@ struct Filing {
 struct SectionFiling {
     #[command(flatten)]
     filing: Filing,
-    /// Section to read. Auto-detection from workbook shape is not built yet.
-    #[arg(long, default_value = "b2b")]
-    section: String,
+    /// Section to read. When omitted, detected from the workbook — the one
+    /// sheet with data decides; ambiguous workbooks must name it.
+    #[arg(long)]
+    section: Option<String>,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -185,7 +186,8 @@ fn context(filing: &Filing) -> Result<FilingContext, String> {
 }
 
 /// Prologue the single-section commands share: resolve the filing details and
-/// section spec, then read that section's rows.
+/// section spec — named, or detected as the one sheet with data — then read
+/// that section's rows.
 fn load(
     workbook: &Path,
     filing: &SectionFiling,
@@ -197,30 +199,67 @@ fn load(
     ),
     ExitCode,
 > {
-    let prepared = context(&filing.filing).and_then(|ctx| {
-        let spec = spec::section(&filing.section).ok_or_else(|| {
-            format!(
-                "--section '{}' is not available yet; specified so far: {}",
-                filing.section,
-                spec::section_codes().join(", ")
-            )
-        })?;
-        Ok((ctx, spec))
-    });
-    let (ctx, spec) = match prepared {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("{e}");
-            return Err(ExitCode::from(EXIT_UNUSABLE));
-        }
+    let unusable = |message: String| {
+        eprintln!("{message}");
+        ExitCode::from(EXIT_UNUSABLE)
     };
+    let ctx = context(&filing.filing).map_err(unusable)?;
 
-    match import::read(workbook, spec) {
-        Ok(rows) => Ok((ctx, spec, rows)),
-        Err(e) => {
-            eprintln!("cannot read {}: {e}", workbook.display());
-            Err(ExitCode::from(EXIT_UNUSABLE))
+    if let Some(code) = &filing.section {
+        let spec = spec::section(code).ok_or_else(|| {
+            unusable(format!(
+                "--section '{code}' is not available yet; specified so far: {}",
+                spec::section_codes().join(", ")
+            ))
+        })?;
+        return match import::read(workbook, spec) {
+            Ok(rows) => Ok((ctx, spec, rows)),
+            Err(e) => Err(unusable(format!("cannot read {}: {e}", workbook.display()))),
+        };
+    }
+
+    // No section named: the one sheet with data decides. A section CSV cannot
+    // be detected (no sheet names to go by), and the GSTN template ships all
+    // thirty sheets, so presence alone decides nothing — data rows do.
+    if workbook
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("csv"))
+    {
+        return Err(unusable(
+            "a section CSV does not say which section it is — pass --section".to_owned(),
+        ));
+    }
+    let mut book = match import::Workbook::open(workbook) {
+        Ok(book) => book,
+        Err(e) => return Err(unusable(format!("cannot read {}: {e}", workbook.display()))),
+    };
+    let mut candidates: Vec<(&'static SectionSpec, Vec<gst_core::record::Row>)> = Vec::new();
+    for section in spec::sections() {
+        if let Ok(rows) = book.read(section)
+            && !rows.is_empty()
+        {
+            candidates.push((section, rows));
         }
+    }
+    match candidates.len() {
+        1 => {
+            let (spec, rows) = candidates.remove(0);
+            eprintln!("section '{}' detected", spec.section);
+            Ok((ctx, spec, rows))
+        }
+        0 => Err(unusable(format!(
+            "no section sheets with data found in {}",
+            workbook.display()
+        ))),
+        _ => Err(unusable(format!(
+            "{} sections have data ({}) — pass --section, or use `gst upload` for the whole workbook",
+            candidates.len(),
+            candidates
+                .iter()
+                .map(|(s, _)| s.section.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ))),
     }
 }
 
