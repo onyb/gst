@@ -40,8 +40,9 @@ export const COMMANDS: CommandEntry[] = [
   },
   {
     name: "diff",
-    usage: "gst diff left.json right.json",
-    description: "Semantically compare two portal JSON files.",
-    status: "planned",
+    usage: "gst diff left.json right.json [right-part2.json ...]",
+    description:
+      "Semantically compare two upload files, or one file against the parts of a split upload.",
+    status: "ready",
   },
 ];

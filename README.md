@@ -97,9 +97,9 @@ which we have not tested.
 | `gst validate` — problems with sheet, row and column | ✅ |
 | `gst upload` — complete portal file from one workbook | ✅ |
 | `gst generate` — one section's payload on its own | ✅ |
-| `gst summary` — section totals before uploading | ⏳ |
+| `gst summary` — section totals before uploading | ✅ |
 | `gst errors` — map the portal's error file back to rows | ⏳ |
-| `gst diff` — semantic diff of two payloads | ⏳ |
+| `gst diff` — semantic diff of two upload files, or one against its split parts | ✅ |
 
 ## Provenance and licensing
 

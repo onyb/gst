@@ -66,8 +66,17 @@ enum Command {
         error_file: PathBuf,
         workbook: PathBuf,
     },
-    /// Semantically diff two portal JSON files
-    Diff { left: PathBuf, right: PathBuf },
+    /// Semantically compare two portal upload files, or one file against the
+    /// part set of a split upload
+    Diff {
+        left: PathBuf,
+        /// One whole file, or every part of a split upload
+        #[arg(required = true, num_args = 1..)]
+        right: Vec<PathBuf>,
+        /// Output format for the report
+        #[arg(long, value_enum, default_value_t = Format::Text)]
+        format: Format,
+    },
 }
 
 /// Details the workbook cannot supply: the official templates carry no
@@ -141,7 +150,11 @@ fn main() -> ExitCode {
             "errors",
             "the portal error-file format is not specified yet",
         ),
-        Command::Diff { .. } => unimplemented("diff", "the canonicalizer is not built yet"),
+        Command::Diff {
+            left,
+            right,
+            format,
+        } => run_diff(&left, &right, format),
     }
 }
 
@@ -400,6 +413,144 @@ fn load_workbook(
         return Err(ExitCode::from(EXIT_UNUSABLE));
     }
     Ok((ctx, run))
+}
+
+/// Read and parse one JSON file into the payload AST, or explain why not.
+fn parse_json_file(path: &Path) -> Result<gst_core::payload::Json, ExitCode> {
+    let text = std::fs::read_to_string(path).map_err(|e| {
+        eprintln!("cannot read {}: {e}", path.display());
+        ExitCode::from(EXIT_UNUSABLE)
+    })?;
+    gst_core::payload::parse(&text).map_err(|e| {
+        eprintln!("{}: {e}", path.display());
+        ExitCode::from(EXIT_UNUSABLE)
+    })
+}
+
+fn run_diff(left: &Path, right: &[PathBuf], format: Format) -> ExitCode {
+    use gst_core::diff::DiffKind;
+
+    let left_json = match parse_json_file(left) {
+        Ok(json) => json,
+        Err(code) => return code,
+    };
+    let mut parts = Vec::new();
+    for path in right {
+        match parse_json_file(path) {
+            Ok(json) => parts.push(json),
+            Err(code) => return code,
+        }
+    }
+    let merged_note = (parts.len() > 1).then(|| format!("{} parts merged", parts.len()));
+    let (right_json, mut notes) = if parts.len() == 1 {
+        (parts.remove(0), Vec::new())
+    } else {
+        match gst_core::upload::merge_parts(parts) {
+            Ok(merged) => (merged.whole, merged.notes),
+            Err(e) => {
+                eprintln!("{e}");
+                return ExitCode::from(EXIT_UNUSABLE);
+            }
+        }
+    };
+
+    let mut report = match gst_core::diff::diff(&left_json, &right_json) {
+        Ok(report) => report,
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::from(EXIT_UNUSABLE);
+        }
+    };
+    notes.extend(std::mem::take(&mut report.notes));
+    if let Some(note) = merged_note {
+        notes.insert(0, note);
+    }
+
+    match format {
+        Format::Json => {
+            use gst_core::payload::Json;
+            let mut out = Json::obj();
+            out.insert_path("identical", Json::Bool(report.identical()));
+            let differences = report
+                .differences
+                .iter()
+                .map(|d| {
+                    let mut entry = Json::obj();
+                    entry.insert_path("section", d.section.clone().map_or(Json::Null, Json::Str));
+                    entry.insert_path("path", Json::Str(d.path.clone()));
+                    entry.insert_path("kind", Json::Str(d.kind.as_str().to_owned()));
+                    entry.insert_path("left", d.left.clone().map_or(Json::Null, Json::Str));
+                    entry.insert_path("right", d.right.clone().map_or(Json::Null, Json::Str));
+                    entry.insert_path("derived", Json::Bool(d.derived));
+                    entry.insert_path(
+                        "cause",
+                        d.cause.map_or(Json::Null, |c| Json::Str(c.to_owned())),
+                    );
+                    entry
+                })
+                .collect();
+            out.insert_path("differences", Json::Arr(differences));
+            out.insert_path(
+                "notes",
+                Json::Arr(notes.iter().cloned().map(Json::Str).collect()),
+            );
+            println!("{}", out.to_json());
+        }
+        Format::Text => {
+            let trim = |value: &Option<String>| -> String {
+                match value {
+                    None => "absent".to_owned(),
+                    Some(v) if v.len() > 60 => format!("{}…", &v[..v.floor_char_boundary(59)]),
+                    Some(v) => v.clone(),
+                }
+            };
+            for d in &report.differences {
+                let line = match d.kind {
+                    DiffKind::RecordRemoved => format!("{}: only in left", d.path),
+                    DiffKind::RecordAdded => format!("{}: only in right", d.path),
+                    DiffKind::ModeMismatch => {
+                        format!("{}: {} vs {}", d.path, trim(&d.left), trim(&d.right))
+                    }
+                    DiffKind::CountMismatch => format!(
+                        "{}: {} record(s) -> {}",
+                        d.path,
+                        trim(&d.left),
+                        trim(&d.right)
+                    ),
+                    _ => format!("{}: {} -> {}", d.path, trim(&d.left), trim(&d.right)),
+                };
+                let mut suffix = String::new();
+                if d.kind == DiffKind::AbsentVsZero {
+                    suffix.push_str(" (tax-neutral)");
+                }
+                if d.derived {
+                    suffix.push_str(" (derived)");
+                }
+                if let Some(cause) = d.cause {
+                    suffix.push_str(&format!(" (follows {cause})"));
+                }
+                println!("{line}{suffix}");
+            }
+            for note in &notes {
+                println!("note: {note}");
+            }
+            if report.identical() {
+                println!("files are semantically identical");
+            } else {
+                println!(
+                    "\n{} difference(s), {} note(s)",
+                    report.differences.len(),
+                    notes.len()
+                );
+            }
+        }
+    }
+
+    if report.identical() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(EXIT_PROBLEMS)
+    }
 }
 
 fn run_summary(workbook: &Path, filing: &Filing, format: Format) -> ExitCode {
