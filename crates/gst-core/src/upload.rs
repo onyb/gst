@@ -577,6 +577,16 @@ impl std::fmt::Display for MergeError {
 
 impl std::error::Error for MergeError {}
 
+/// The IFF key set: what a quarterly filer's first two months carry.
+pub(crate) fn iff_keep_keys() -> &'static [String] {
+    &ENVELOPE.iff.keep_keys
+}
+
+/// The version and hash literals the reference stamps on every file.
+pub(crate) fn envelope_literals() -> (&'static str, &'static str) {
+    (&ENVELOPE.version, &ENVELOPE.hash)
+}
+
 /// The keys the envelope draws from filing context or literals — the header
 /// every part repeats, as opposed to section content that unions.
 pub(crate) fn header_keys() -> Vec<&'static str> {
@@ -774,7 +784,7 @@ fn section_envelopes(
 /// the HSN summary populated, so it could not show whether a half-empty object
 /// keeps its empty member. omit-empty is recursive by construction and the
 /// top-level behaviour is confirmed, so the same rule is applied inside.
-fn prune_empty(value: &mut Json) {
+pub(crate) fn prune_empty(value: &mut Json) {
     match value {
         Json::Obj(entries) => {
             for (_, v) in entries.iter_mut() {

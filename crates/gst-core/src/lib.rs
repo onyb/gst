@@ -5,6 +5,7 @@
 //! embedded at build time. No I/O beyond what callers hand in, no network.
 
 pub mod date;
+pub mod diff;
 pub mod generate;
 pub mod gstin;
 pub mod import;
