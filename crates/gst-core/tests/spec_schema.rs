@@ -17,7 +17,7 @@ use serde_json::Value;
 
 /// Whole-return documents with their own shapes, not section specs — the
 /// meta-schema does not describe them and they register no section code.
-const NON_SECTION_FILES: [&str; 2] = ["upload-envelope.json", "summary.json"];
+const NON_SECTION_FILES: [&str; 3] = ["upload-envelope.json", "summary.json", "diff.json"];
 
 /// Property names declared at a schema location, when that location closes
 /// itself to anything else. `None` means the schema allows extra keys there and

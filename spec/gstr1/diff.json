@@ -1,0 +1,352 @@
+{
+  "description": "Semantic identity of every record array in the upload file, in file order — what `gst diff` needs that byte comparison cannot give: where records live, what identifies one, which identities are lossy (multiset), which keys are derived from others, and which absent keys mean a blank cell rather than a missing value. Key paths are PAYLOAD paths, dots nesting as payload keys do. Identities restate each section spec's grouping keys in payload terms; the guard tests cross-check them.",
+  "provenance": {
+    "offline_tool": "V3.2.4",
+    "source": "Each entry's identity is the section spec's grouping (envelope_key/invoice_key/item_key/record_key) mapped through its output block to payload keys; array locations follow upload-envelope.json's key walk. Lossiness notes come from the sections' own recorded quirks.",
+    "verified_on": "2026-07-30"
+  },
+  "notes": [
+    "`levels` nest: the first level is the record array at `path`; each following level names the `array` member descended into. `keys` identify one element among its siblings; an empty `keys` list means nothing identifies an element and the level is compared as a multiset of whole records.",
+    "`case_insensitive` folds the key value for matching (document numbers; mirrors invoice_key_case_insensitive). `global: true` means the key identifies across the WHOLE section, not within one parent (mirrors invoice_key_global): an invoice that moved between envelopes is the same invoice with a changed parent key, not a removal plus an addition.",
+    "`multiset: true` marks identities the payload cannot guarantee unique — the collapse key is lossy (b2cs: etin nearly always absent, diff_percent survives only at 0.65), unenforced (nil), positional (doc_issue docs), or partly unemitted (pre-052021 hsn.data). Records sharing a tuple compare as multisets of whole normalized records.",
+    "`derived` keys are computed from other values (num = rt*100+1, doc_num from doc_typ, net_issue = totnum - cancel, sply_ty from pos vs the filer's state, hsn desc from the code table, ostin a duplicate of stin, dense hsn serials). A difference there is a consequence, not an independent edit.",
+    "`absent_means_zero` names keys whose absence records a BLANK source cell where a present 0 records a typed zero — the b2cl/b2cla and txpd/txpda cess behaviour settled by golden capture. Tax-neutral (the reference's own summary treats absent and 0 alike) but interface-visible, so a distinct difference class. It does NOT generalize: an absent iamt against a present camt+samt is the structural intra/inter split, a plain value difference.",
+    "`from_period`/`until_period` gate entries and individual key parts by return period, exclusive until — the HSN bifurcation at 052025 and the hsn.data rate key from 052021.",
+    "txpd/txpda are the upload names of sections atadj/atadja, appended last; ecom/ecoma/hsn/supeco members map to their own registry sections via from_section."
+  ],
+  "sections": [
+    {
+      "path": "b2b",
+      "from_section": "b2b",
+      "levels": [
+        { "label": "supplier", "keys": ["ctin"] },
+        { "label": "invoice", "array": "inv", "keys": ["inum"], "case_insensitive": true },
+        { "label": "item", "array": "itms", "keys": ["itm_det.rt"] }
+      ],
+      "derived": ["inv.itms.num"]
+    },
+    {
+      "path": "b2ba",
+      "from_section": "b2ba",
+      "levels": [
+        { "label": "supplier", "keys": ["ctin"] },
+        { "label": "invoice", "array": "inv", "keys": ["inum"], "case_insensitive": true },
+        { "label": "item", "array": "itms", "keys": ["itm_det.rt"] }
+      ],
+      "derived": ["inv.itms.num"],
+      "notes": [
+        "Identity is the REVISED number alone; the reference also matches on the original (recorded open_question in b2ba.json). A reference-produced amendment file may pair records differently."
+      ]
+    },
+    {
+      "path": "b2cl",
+      "from_section": "b2cl",
+      "levels": [
+        { "label": "place of supply", "keys": ["pos"] },
+        { "label": "invoice", "array": "inv", "keys": ["inum"], "case_insensitive": true, "global": true },
+        { "label": "item", "array": "itms", "keys": ["itm_det.rt"] }
+      ],
+      "derived": ["inv.itms.num"],
+      "absent_means_zero": ["inv.itms.itm_det.csamt"]
+    },
+    {
+      "path": "b2cla",
+      "from_section": "b2cla",
+      "levels": [
+        { "label": "place of supply", "keys": ["pos"] },
+        { "label": "invoice", "array": "inv", "keys": ["inum"], "case_insensitive": true, "global": true },
+        { "label": "item", "array": "itms", "keys": ["itm_det.rt"] }
+      ],
+      "derived": ["inv.itms.num"],
+      "absent_means_zero": ["inv.itms.itm_det.csamt"]
+    },
+    {
+      "path": "b2cs",
+      "from_section": "b2cs",
+      "levels": [
+        { "label": "rate line", "keys": ["pos", "rt", "etin", "diff_percent"], "multiset": true }
+      ],
+      "derived": ["sply_ty"],
+      "notes": [
+        "LOSSY IDENTITY: etin is nearly always absent (the sheet's E branch is unreachable) and diff_percent survives only at 0.65, so distinct source rows can share a tuple."
+      ]
+    },
+    {
+      "path": "b2csa",
+      "from_section": "b2csa",
+      "levels": [
+        { "label": "amendment", "keys": ["omon", "pos", "typ", "diff_percent"] },
+        { "label": "item", "array": "itms", "keys": ["rt"] }
+      ],
+      "derived": ["sply_ty"]
+    },
+    {
+      "path": "nil.inv",
+      "from_section": "nil",
+      "levels": [
+        { "label": "supply category", "keys": ["sply_ty"], "multiset": true }
+      ],
+      "notes": [
+        "sply_ty has four legal values but uniqueness is NOT enforced — the reference's duplicate-row check can never fire."
+      ]
+    },
+    {
+      "path": "exp",
+      "from_section": "exp",
+      "levels": [
+        { "label": "export type", "keys": ["exp_typ"] },
+        { "label": "invoice", "array": "inv", "keys": ["inum"], "case_insensitive": true, "global": true },
+        { "label": "item", "array": "itms", "keys": ["rt"] }
+      ]
+    },
+    {
+      "path": "expa",
+      "from_section": "expa",
+      "levels": [
+        { "label": "export type", "keys": ["exp_typ"] },
+        { "label": "invoice", "array": "inv", "keys": ["inum"], "case_insensitive": true, "global": true },
+        { "label": "item", "array": "itms", "keys": ["rt"] }
+      ],
+      "notes": [
+        "Revised-number identity; same open_question as b2ba."
+      ]
+    },
+    {
+      "path": "cdnra",
+      "from_section": "cdnra",
+      "levels": [
+        { "label": "supplier", "keys": ["ctin"] },
+        { "label": "note", "array": "nt", "keys": ["nt_num"], "case_insensitive": true },
+        { "label": "item", "array": "itms", "keys": ["itm_det.rt"] }
+      ],
+      "derived": ["nt.itms.num"],
+      "notes": [
+        "Revised-number identity; same open_question as b2ba."
+      ]
+    },
+    {
+      "path": "at",
+      "from_section": "at",
+      "levels": [
+        { "label": "place of supply", "keys": ["pos"] },
+        { "label": "item", "array": "itms", "keys": ["rt"] }
+      ],
+      "derived": ["sply_ty"]
+    },
+    {
+      "path": "ata",
+      "from_section": "ata",
+      "levels": [
+        { "label": "amendment", "keys": ["omon", "pos"] },
+        { "label": "item", "array": "itms", "keys": ["rt"] }
+      ],
+      "derived": ["sply_ty"],
+      "notes": [
+        "The declared key is pos alone, but fy+omonth are agree fields, so omon+pos is the payload-safe identity — two amendments of different months for one state are distinct records."
+      ]
+    },
+    {
+      "path": "cdnr",
+      "from_section": "cdnr",
+      "levels": [
+        { "label": "supplier", "keys": ["ctin"] },
+        { "label": "note", "array": "nt", "keys": ["nt_num"], "case_insensitive": true },
+        { "label": "item", "array": "itms", "keys": ["itm_det.rt"] }
+      ],
+      "derived": ["nt.itms.num"],
+      "notes": [
+        "ntty is a VALUE under invoice_field_conflict:error, not identity — one note number cannot be both C and D, so a changed note type is a modification."
+      ]
+    },
+    {
+      "path": "cdnur",
+      "from_section": "cdnur",
+      "levels": [
+        { "label": "note", "keys": ["nt_num"], "case_insensitive": true },
+        { "label": "item", "array": "itms", "keys": ["itm_det.rt"] }
+      ],
+      "derived": ["itms.num"]
+    },
+    {
+      "path": "cdnura",
+      "from_section": "cdnura",
+      "levels": [
+        { "label": "note", "keys": ["nt_num"], "case_insensitive": true },
+        { "label": "item", "array": "itms", "keys": ["itm_det.rt"] }
+      ],
+      "derived": ["itms.num"]
+    },
+    {
+      "path": "doc_issue.doc_det",
+      "from_section": "doc_issue",
+      "levels": [
+        { "label": "document type", "keys": ["doc_typ"] },
+        { "label": "series", "array": "docs", "keys": [], "multiset": true }
+      ],
+      "derived": ["doc_num", "docs.net_issue"],
+      "notes": [
+        "docs[] rows have no identity ('Sr. No. From' does not identify a row; item_conflict is append; num is a minted serial), so a type's series compare as a multiset of whole rows."
+      ]
+    },
+    {
+      "path": "hsn.data",
+      "from_section": "hsn",
+      "until_period": "052025",
+      "levels": [
+        {
+          "label": "summary row",
+          "keys": ["hsn_sc", "uqc", { "field": "rt", "from_period": "052021" }],
+          "multiset": true
+        }
+      ],
+      "derived": ["num", "desc"],
+      "notes": [
+        "Before 052021 the payload carries no rt, so the collapse key is partly unemitted and (hsn_sc, uqc) can legitimately repeat — hence multiset. num is a dense serial."
+      ]
+    },
+    {
+      "path": "hsn.hsn_b2b",
+      "from_section": "hsn(b2b)",
+      "from_period": "052025",
+      "levels": [
+        { "label": "summary row", "keys": ["hsn_sc", "uqc"] }
+      ],
+      "derived": ["num", "desc"]
+    },
+    {
+      "path": "hsn.hsn_b2c",
+      "from_section": "hsn(b2c)",
+      "from_period": "052025",
+      "levels": [
+        { "label": "summary row", "keys": ["hsn_sc", "uqc"] }
+      ],
+      "derived": ["num", "desc"]
+    },
+    {
+      "path": "supeco.clttx",
+      "from_section": "supeco",
+      "levels": [
+        { "label": "operator", "keys": ["etin"] }
+      ]
+    },
+    {
+      "path": "supeco.paytx",
+      "from_section": "supeco",
+      "levels": [
+        { "label": "operator", "keys": ["etin"] }
+      ]
+    },
+    {
+      "path": "supecoa.clttxa",
+      "from_section": "supecoa",
+      "levels": [
+        { "label": "amendment", "keys": ["oetin", "omon"] }
+      ]
+    },
+    {
+      "path": "supecoa.paytxa",
+      "from_section": "supecoa",
+      "levels": [
+        { "label": "amendment", "keys": ["oetin", "omon"] }
+      ]
+    },
+    {
+      "path": "ecom.b2b",
+      "from_section": "ecomb2b",
+      "levels": [
+        { "label": "operator and recipient", "keys": ["stin", "rtin"] },
+        { "label": "invoice", "array": "inv", "keys": ["inum"], "case_insensitive": true },
+        { "label": "item", "array": "itms", "keys": ["itm_det.rt"] }
+      ],
+      "derived": ["inv.itms.num"]
+    },
+    {
+      "path": "ecom.b2c",
+      "from_section": "ecomb2c",
+      "levels": [
+        { "label": "rate line", "keys": ["pos", "rt", "stin"] }
+      ],
+      "derived": ["sply_ty"]
+    },
+    {
+      "path": "ecom.urp2b",
+      "from_section": "ecomurp2b",
+      "levels": [
+        { "label": "recipient", "keys": ["rtin"] },
+        { "label": "invoice", "array": "inv", "keys": ["inum"], "case_insensitive": true },
+        { "label": "item", "array": "itms", "keys": ["itm_det.rt"] }
+      ],
+      "derived": ["inv.itms.num"]
+    },
+    {
+      "path": "ecom.urp2c",
+      "from_section": "ecomurp2c",
+      "levels": [
+        { "label": "rate line", "keys": ["pos", "rt"] }
+      ],
+      "derived": ["sply_ty"]
+    },
+    {
+      "path": "ecoma.b2ba",
+      "from_section": "ecomab2b",
+      "levels": [
+        { "label": "operator and recipient", "keys": ["stin", "rtin"] },
+        { "label": "invoice", "array": "inv", "keys": ["inum"], "case_insensitive": true },
+        { "label": "item", "array": "itms", "keys": ["itm_det.rt"] }
+      ],
+      "derived": ["inv.itms.num"]
+    },
+    {
+      "path": "ecoma.b2ca",
+      "from_section": "ecomab2c",
+      "levels": [
+        { "label": "place of supply", "keys": ["pos"] },
+        { "label": "amendment", "array": "posItms", "keys": ["stin", "omon"] },
+        { "label": "item", "array": "itms", "keys": ["rt"] }
+      ],
+      "derived": ["posItms.sply_ty", "posItms.ostin"],
+      "notes": [
+        "ostin is mapped from the same field as stin — the two keys always agree and a difference in one implies the other."
+      ]
+    },
+    {
+      "path": "ecoma.urp2ba",
+      "from_section": "ecomaurp2b",
+      "levels": [
+        { "label": "recipient", "keys": ["rtin"] },
+        { "label": "invoice", "array": "inv", "keys": ["inum"], "case_insensitive": true },
+        { "label": "item", "array": "itms", "keys": ["itm_det.rt"] }
+      ],
+      "derived": ["inv.itms.num"]
+    },
+    {
+      "path": "ecoma.urp2ca",
+      "from_section": "ecomaurp2c",
+      "levels": [
+        { "label": "amendment", "keys": ["pos", "omon"] },
+        { "label": "item", "array": "itms", "keys": ["rt"] }
+      ],
+      "derived": ["sply_ty"]
+    },
+    {
+      "path": "txpd",
+      "from_section": "atadj",
+      "levels": [
+        { "label": "place of supply", "keys": ["pos"] },
+        { "label": "item", "array": "itms", "keys": ["rt"] }
+      ],
+      "derived": ["sply_ty"],
+      "absent_means_zero": ["itms.csamt"]
+    },
+    {
+      "path": "txpda",
+      "from_section": "atadja",
+      "levels": [
+        { "label": "amendment", "keys": ["omon", "pos"] },
+        { "label": "item", "array": "itms", "keys": ["rt"] }
+      ],
+      "derived": ["sply_ty"],
+      "absent_means_zero": ["itms.csamt"]
+    }
+  ]
+}
