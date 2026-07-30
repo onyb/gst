@@ -16,9 +16,10 @@
     "`zero` blanks the listed columns (before accumulation) when the named field equals the given value; `at` says whether the field is read on the counted node or on the payload object (envelope). SEZ-without-payment, export-without-payment and unregistered-notes-against-export-without-payment supplies therefore show 0 IGST and 0 cess in the summary even though the stored items may carry tax.",
     "The zero rules on the four ecom b2b-shaped sections are declared at the envelope because the reference reads inv_typ on the outer stin/rtin object — which never carries one, so the rule can never fire. Encoded for fidelity, not effect.",
     "`from_period`/`until_period` gate a row by return period, matching update_meta_file's conditional appends and the HSN bifurcation. As everywhere in these specs, `from_period` is inclusive and `until_period` exclusive — the period a change starts. The merged `hsn` row (until the 05-2025 bifurcation) is declared for fidelity, but this engine registers no merged hsn section, so it is inert.",
-    "Quarterly (TPQ) filers get a reduced e-commerce row set in non-quarter-end months; this engine models monthly filing only.",
+    "Quarterly (TPQ) filers get a reduced e-commerce row set in non-quarter-end months — see the `iff` note below.",
     "The meta file shape is {gstin, fp, version, hash, counts} — plus gt/cur_gt after fp when the working file carries turnover — where version and hash are the upload-envelope literals. Each counts entry is written in key order {cd, result, count, name}, and result in key order {cgTl, sgTl, igTl, csTl}.",
     "reformSummary has payload-key fallbacks (atadj→txpd, cdnr→cdn, ecom*/ecoma* and hsn(...) all read one merged key) so it can also summarise a generated upload file. This engine keeps sections separate before enveloping, so no aliasing is needed here.",
+    "In an IFF month (quarterly filer, months 1-2 of a quarter) only the rows marked `iff` can appear: the reference refuses an import whose workbook carries data in any other sheet (offline2.js returns validFlag false), so a valid IFF working store never holds other sections, and update_meta_file appends only the four b2b-shaped e-commerce rows. Quarter-end months use the full monthly row set. Verified against the captured gstr1-iff-072025-meta.json; the TPQ branch uses the same labels, non-breaking space included.",
     "The four table-15 labels carry a NON-BREAKING SPACE (U+00A0) between '9(5)' and '- 15'; the 15A labels use a plain space. Invisible in the source, confirmed against a captured meta file."
   ],
   "amount_keys": {
@@ -31,6 +32,7 @@
     {
       "cd": "b2b",
       "name": "B2B, SEZ, DE Invoices - 4A, 4B, 6B, 6C",
+      "iff": true,
       "count": ["inv"],
       "amounts": ["itms", "itm_det"],
       "zero": { "field": "inv_typ", "at": "count", "equals": "SEWOP", "columns": ["igst", "cess"] }
@@ -38,6 +40,7 @@
     {
       "cd": "b2ba",
       "name": "Amended B2B Invoices",
+      "iff": true,
       "count": ["inv"],
       "amounts": ["itms", "itm_det"],
       "zero": { "field": "inv_typ", "at": "count", "equals": "SEWOP", "columns": ["igst", "cess"] }
@@ -69,6 +72,7 @@
     {
       "cd": "cdnr",
       "name": "Credit/Debit Notes(Registered) - 9B",
+      "iff": true,
       "count": ["nt"],
       "amounts": ["itms", "itm_det"],
       "negate": { "field": "ntty", "values": ["C", "R"] },
@@ -77,6 +81,7 @@
     {
       "cd": "cdnra",
       "name": "Amended Credit/Debit Notes(Registered)",
+      "iff": true,
       "count": ["nt"],
       "amounts": ["itms", "itm_det"],
       "negate": { "field": "ntty", "values": ["C", "R"] },
@@ -157,6 +162,7 @@
     {
       "cd": "ecomb2b",
       "name": "Supplies U/s 9(5) - 15 - B2B",
+      "iff": true,
       "from_period": "012024",
       "count": ["inv"],
       "amounts": ["itms", "itm_det"],
@@ -172,6 +178,7 @@
     {
       "cd": "ecomurp2b",
       "name": "Supplies U/s 9(5) - 15 - URP2B",
+      "iff": true,
       "from_period": "012024",
       "count": ["inv"],
       "amounts": ["itms", "itm_det"],
@@ -195,6 +202,7 @@
     {
       "cd": "ecomab2b",
       "name": "Amended Supplies U/s 9(5) - 15A - B2B",
+      "iff": true,
       "from_period": "022024",
       "count": ["inv"],
       "amounts": ["itms", "itm_det"],
@@ -210,6 +218,7 @@
     {
       "cd": "ecomaurp2b",
       "name": "Amended Supplies U/s 9(5) - 15A - URP2B",
+      "iff": true,
       "from_period": "022024",
       "count": ["inv"],
       "amounts": ["itms", "itm_det"],

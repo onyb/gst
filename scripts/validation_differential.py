@@ -59,7 +59,7 @@ MONTHS = [(name, i + 1) for i, name in enumerate(_MONTH_NAMES)]
 MONTHS = MONTHS[3:] + MONTHS[:3]
 
 
-def share_data(gstin: str, period: str, fy: str) -> dict:
+def share_data(gstin: str, period: str, fy: str, is_tpq: bool = False) -> dict:
     """The context blob `/addtblfile` expects, reconstructed from the UI's."""
     years = []
     for fy_label in FINANCIAL_YEARS:
@@ -82,7 +82,7 @@ def share_data(gstin: str, period: str, fy: str) -> dict:
         "yearSelected": {"year": fy, "months": current},
         "isSezTaxpayer": False,
         "isUploadImport": False,
-        "isTPQ": False,
+        "isTPQ": is_tpq,
         "disableHSNRestrictions": False,
         "newHSNStartDateConstant": "052021",
         "R1_NEW_ECO_STRT_PRD": "012024",
@@ -233,12 +233,13 @@ def dig(work: dict, path: list[str]) -> list:
 class Tool:
     """The official offline tool, driven over its own HTTP endpoints."""
 
-    def __init__(self, app_dir: Path, gstin: str, period: str, fy: str, month: str, port: int):
+    def __init__(self, app_dir: Path, gstin: str, period: str, fy: str, month: str, port: int,
+                 is_tpq: bool = False):
         self.base = f"http://localhost:{port}"
         self.gstin, self.period, self.fy, self.month = gstin, period, fy, month
         self.work_dir = app_dir / "public/userData" / gstin / "GSTR1" / fy / month
         self.work_file = self.work_dir / f"GSTR1_{gstin}_{fy}_{month}.json"
-        self.share = json.dumps(share_data(gstin, period, fy))
+        self.share = json.dumps(share_data(gstin, period, fy, is_tpq))
 
     def records(self, work: dict, section: str) -> int:
         primary, fallback = RECORD_PATHS.get(section, ([[section]], []))

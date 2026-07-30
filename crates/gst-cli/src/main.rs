@@ -559,17 +559,6 @@ fn run_summary(workbook: &Path, filing: &Filing, format: Format) -> ExitCode {
         Err(code) => return code,
     };
 
-    // The reference shows a reduced row set for an IFF (quarterly, months 1-2
-    // of a quarter); spec/gstr1/summary.json models monthly filing only, and
-    // a wrong summary is worse than none. Quarter-end months use the full
-    // monthly row set, so they pass through.
-    if ctx.is_quarterly && !ctx.period.month.is_multiple_of(3) {
-        eprintln!(
-            "gst summary: the IFF summary row set is not modeled yet — pending a capture from the reference tool"
-        );
-        return ExitCode::from(EXIT_UNUSABLE);
-    }
-
     let summaries = gst_core::summary::summarize(&run, &ctx);
 
     match format {

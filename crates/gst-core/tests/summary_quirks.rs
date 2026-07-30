@@ -318,6 +318,32 @@ fn excluded_and_empty_sections_never_appear() {
 }
 
 #[test]
+fn an_iff_month_keeps_only_the_eight_iff_rows() {
+    // Data in supeco and b2b; a quarterly filer in month 1 of a quarter may
+    // only file the IFF set, so only the b2b row survives. At quarter-end the
+    // full monthly row set returns.
+    let supeco = envelope(|e| e.insert_path("igst", Json::Num(dec(100))));
+    let b2b = envelope(|e| {
+        let mut det = Json::obj();
+        det.insert_path("itm_det", item(&[("camt", 9)]));
+        let mut inv = Json::obj();
+        inv.insert_path("itms", Json::Arr(vec![det]));
+        e.insert_path("inv", Json::Arr(vec![inv]));
+    });
+    let run = run_of(vec![("supeco", supeco), ("b2b", b2b)]);
+
+    let mut iff = common::ctx(7, 2025);
+    iff.is_quarterly = true;
+    let rows: Vec<&str> = summarize(&run, &iff).iter().map(|s| s.cd).collect();
+    assert_eq!(rows, ["b2b"]);
+
+    let mut quarter_end = common::ctx(9, 2025);
+    quarter_end.is_quarterly = true;
+    let rows: Vec<&str> = summarize(&run, &quarter_end).iter().map(|s| s.cd).collect();
+    assert_eq!(rows, ["b2b", "supeco"]);
+}
+
+#[test]
 fn eco_rows_are_gated_by_period() {
     let row = envelope(|e| e.insert_path("igst", Json::Num(dec(100))));
     let run = run_of(vec![("supeco", row)]);

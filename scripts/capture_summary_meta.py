@@ -42,6 +42,8 @@ def main() -> int:
     ap.add_argument("--fy", default="2025-26")
     ap.add_argument("--month", default="June")
     ap.add_argument("--port", type=int, default=3010)
+    ap.add_argument("--quarterly", action="store_true",
+                    help="capture as a quarterly (TPQ) filer — an IFF in months 1-2")
     ap.add_argument("--out", required=True, type=Path,
                     help="where to write the captured meta, verbatim")
     args = ap.parse_args()
@@ -51,7 +53,8 @@ def main() -> int:
     except requests.RequestException:
         sys.exit(f"no offline tool on port {args.port} — start it with `node app.js`")
 
-    tool = Tool(args.app_dir, args.gstin, args.period, args.fy, args.month, args.port)
+    tool = Tool(args.app_dir, args.gstin, args.period, args.fy, args.month, args.port,
+                is_tpq=args.quarterly)
     try:
         resp = tool.seed(args.workbook)
     except (requests.RequestException, ValueError):
@@ -67,7 +70,7 @@ def main() -> int:
         json={
             "fName": str(tool.work_file.relative_to(args.app_dir / "public").with_suffix("")),
             "form": "GSTR1",
-            "isTPQ": False,
+            "isTPQ": args.quarterly,
         },
         timeout=60,
     ).json()

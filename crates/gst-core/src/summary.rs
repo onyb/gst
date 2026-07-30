@@ -80,6 +80,11 @@ struct Zero {
 struct RowSpec {
     cd: String,
     name: String,
+    /// Present in an IFF month (quarterly, months 1-2). The reference refuses
+    /// an import carrying data in any other sheet, so only these rows can
+    /// appear in a valid IFF working store.
+    #[serde(default)]
+    iff: bool,
     #[serde(default)]
     excluded: bool,
     #[serde(default)]
@@ -160,9 +165,10 @@ pub fn covered_sections() -> impl Iterator<Item = &'static str> {
 /// Order is the official server order, not [`spec::sections()`] order.
 pub fn summarize(run: &WorkbookRun, ctx: &FilingContext) -> Vec<SectionSummary> {
     let period = ctx.period.as_yyyymm();
+    let iff_month = ctx.is_quarterly && !ctx.period.month.is_multiple_of(3);
     let mut out = Vec::new();
     for row in &SUMMARY.rows {
-        if row.excluded || !row.covers(period) {
+        if row.excluded || !row.covers(period) || (iff_month && !row.iff) {
             continue;
         }
         let Some(generated) = run.sections.get(&row.cd) else {

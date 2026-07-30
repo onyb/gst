@@ -11,6 +11,7 @@ instead of an assertion.
 | `gstr1-062025-reference.json` | tool V3.2.4, full import → generate chain | `fixtures/gstr1/demo-workbook.xlsx`, GSTIN `27AAPFU0939F1ZV`, period `062025` |
 | `gstr1-062025-meta.json` | tool V3.2.4, import → `/fetchMeta` summary recompute | `fixtures/gstr1/demo-workbook.xlsx`, same filer |
 | `gstr1-eco-062025-meta.json` | tool V3.2.4, import → `/fetchMeta` summary recompute | `fixtures/gstr1/eco-workbook.xlsx`, same filer |
+| `gstr1-iff-072025-meta.json` | tool V3.2.4, TPQ import (`isTPQ`) → `/fetchMeta` | `fixtures/gstr1/iff-workbook.xlsx`, same filer, quarterly, period `072025` |
 
 ## How it was captured
 
@@ -172,3 +173,11 @@ use a plain space. The summary spec now records the labels verbatim.
 `ecoma`/`hsn` keys), so feeding it a generated upload file would also have
 worked; the working-store capture is the faithful one, since that is what the
 tool itself summarises.
+
+The IFF capture also settled how a TPQ import behaves: the reference REFUSES
+the whole workbook (`validFlag: false`, offline2.js) when any sheet outside
+b2b/b2ba/cdnr/cdnra and the four b2b-shaped e-commerce tables carries data in
+an IFF month — it does not drop rows silently. A valid IFF working store can
+therefore only ever hold those eight sections, and its summary meta appends
+only the four b2b-shaped e-commerce rows (same verbatim labels, non-breaking
+space included).

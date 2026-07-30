@@ -12,16 +12,13 @@ mod common;
 
 use gst_core::summary::{meta_json, summarize};
 
-fn build_meta(workbook: &str) -> String {
-    let ctx = common::ctx(6, 2025);
-    let run = common::clean_run(workbook, &ctx);
-    meta_json(&summarize(&run, &ctx), &ctx).to_json()
-}
+use gst_core::validate::FilingContext;
 
-fn compare(workbook: &str, golden_file: &str) {
+fn compare_with(workbook: &str, golden_file: &str, ctx: &FilingContext) {
     let golden =
         std::fs::read_to_string(common::repo_path(golden_file)).expect("golden file is present");
-    let ours = build_meta(workbook);
+    let run = common::clean_run(workbook, ctx);
+    let ours = meta_json(&summarize(&run, ctx), ctx).to_json();
 
     if ours != golden {
         // Narrow the failure to the first differing row rather than dumping 3.5 KB.
@@ -48,16 +45,31 @@ fn compare(workbook: &str, golden_file: &str) {
 
 #[test]
 fn the_demo_workbook_summary_matches_the_captured_meta_byte_for_byte() {
-    compare(
+    compare_with(
         "fixtures/gstr1/demo-workbook.xlsx",
         "fixtures/golden/gstr1-062025-meta.json",
+        &common::ctx(6, 2025),
     )
 }
 
 #[test]
 fn the_eco_workbook_summary_matches_the_captured_meta_byte_for_byte() {
-    compare(
+    compare_with(
         "fixtures/gstr1/eco-workbook.xlsx",
         "fixtures/golden/gstr1-eco-062025-meta.json",
+        &common::ctx(6, 2025),
+    )
+}
+
+#[test]
+fn the_iff_workbook_summary_matches_the_captured_meta_byte_for_byte() {
+    // A quarterly filer in month 1 of a quarter: only the eight IFF rows can
+    // appear, with the reduced b2b-shaped e-commerce set.
+    let mut ctx = common::ctx(7, 2025);
+    ctx.is_quarterly = true;
+    compare_with(
+        "fixtures/gstr1/iff-workbook.xlsx",
+        "fixtures/golden/gstr1-iff-072025-meta.json",
+        &ctx,
     )
 }
