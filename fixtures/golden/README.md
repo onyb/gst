@@ -12,6 +12,7 @@ instead of an assertion.
 | `gstr1-062025-meta.json` | tool V3.2.4, import → `/fetchMeta` summary recompute | `fixtures/gstr1/demo-workbook.xlsx`, same filer |
 | `gstr1-eco-062025-meta.json` | tool V3.2.4, import → `/fetchMeta` summary recompute | `fixtures/gstr1/eco-workbook.xlsx`, same filer |
 | `gstr1-iff-072025-meta.json` | tool V3.2.4, TPQ import (`isTPQ`) → `/fetchMeta` | `fixtures/gstr1/iff-workbook.xlsx`, same filer, quarterly, period `072025` |
+| `gstr3b-012025-expected.json` | **PENDING ORACLE VERIFICATION** — our own clean JSON, derived from the V5.8 VBA source | `fixtures/gstr3b/form-workbook.xlsx`, same filer, FY 2024-25 / January |
 
 ## How it was captured
 
@@ -181,3 +182,21 @@ an IFF month — it does not drop rows silently. A valid IFF working store can
 therefore only ever hold those eight sections, and its summary meta appends
 only the four b2b-shaped e-commerce rows (same verbatim labels, non-breaking
 space included).
+
+## The GSTR-3B expected payload
+
+`gstr3b-012025-expected.json` is NOT a capture: the GSTR-3B utility is Excel
+VBA with no HTTP surface, so its output can only come from real Excel. The
+committed file is this implementation's own clean JSON over the fixture
+workbook, hand-audited against the V5.8 VBA emitter it models: emission key
+order, every fixed key present with blank cells as 0, Excel ROUND
+(half-away-from-zero on the double) on all amounts EXCEPT the two late-fee
+cells (raw, omitted when blank), itc_net computed per the 4(C) formula, POS
+as two-digit strings, empty inter_sup sub-arrays emitted, eco_dtls gated from
+072022 and inter_sup dropped from 112025. The utility's own file additionally
+carries whitespace noise (CRLF, blank lines, a bare CR inside empty braces) —
+legal JSON our parser accepts, so the future oracle comparison parses both
+sides and compares semantically. To capture: fill the real .xlsm with the
+manifest `scripts/make_gstr3b_fixture.py` prints, Validate, Create JSON
+(on Mac Excel the export path may need patching — Environ("USERPROFILE") is
+empty there), and commit the produced file as `gstr3b-012025-reference.json`.
