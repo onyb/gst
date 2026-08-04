@@ -84,11 +84,13 @@ enum Command {
 #[derive(Args)]
 struct Filing {
     /// Your own GSTIN, as the filer. Determines the intra/inter-state split.
+    /// Required for GSTR-1 workbooks; a GSTR-3B workbook carries its own.
     #[arg(long)]
-    gstin: String,
-    /// Return period as MMYYYY, e.g. 072017
+    gstin: Option<String>,
+    /// Return period as MMYYYY, e.g. 072017. Required for GSTR-1 workbooks;
+    /// a GSTR-3B workbook carries its own.
     #[arg(long)]
-    period: String,
+    period: Option<String>,
     /// Treat the filer as an SEZ unit, which makes every supply inter-state
     #[arg(long)]
     sez: bool,
@@ -164,20 +166,162 @@ fn unimplemented(command: &str, why: &str) -> ExitCode {
     ExitCode::from(EXIT_UNUSABLE)
 }
 
+/// Whether this workbook is a GSTR-3B form. A CSV never is; an unreadable
+/// file answers false so the normal path reports the real error.
+fn is_gstr3b_workbook(workbook: &Path) -> bool {
+    if workbook
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("csv"))
+    {
+        return false;
+    }
+    import::Workbook::open(workbook).is_ok_and(|wb| gst_core::gstr3b::is_gstr3b(&wb))
+}
+
+/// Read the 3B form and cross-check any flags the user supplied against it.
+fn load_gstr3b(workbook: &Path, filing: &Filing) -> Result<gst_core::gstr3b::FormData, ExitCode> {
+    let form = gst_core::gstr3b::read(workbook).map_err(|e| {
+        eprintln!("cannot read {}: {e}", workbook.display());
+        ExitCode::from(EXIT_UNUSABLE)
+    })?;
+    if let Some(gstin) = &filing.gstin
+        && !gstin.eq_ignore_ascii_case(&form.gstin)
+    {
+        eprintln!(
+            "--gstin '{gstin}' does not match the form's GSTIN '{}'",
+            form.gstin
+        );
+        return Err(ExitCode::from(EXIT_UNUSABLE));
+    }
+    if let Some(period) = &filing.period
+        && form
+            .period
+            .as_ref()
+            .is_some_and(|p| p.as_mmyyyy() != *period)
+    {
+        eprintln!(
+            "--period '{period}' does not match the form's FY/month ({} {} = {})",
+            form.fy,
+            form.month,
+            form.period
+                .as_ref()
+                .map(|p| p.as_mmyyyy())
+                .unwrap_or_default()
+        );
+        return Err(ExitCode::from(EXIT_UNUSABLE));
+    }
+    if filing.sez || filing.aato_over_5cr || filing.quarterly {
+        eprintln!(
+            "note: --sez/--aato-over-5cr/--quarterly do not apply to GSTR-3B and are ignored"
+        );
+    }
+    Ok(form)
+}
+
+fn run_validate_gstr3b(workbook: &Path, filing: &Filing, format: Format) -> ExitCode {
+    let form = match load_gstr3b(workbook, filing) {
+        Ok(form) => form,
+        Err(code) => return code,
+    };
+    let findings = gst_core::gstr3b::validate(&form);
+    let refs: Vec<&Finding> = findings.iter().collect();
+    let errors = findings
+        .iter()
+        .filter(|f| f.severity == Severity::Error)
+        .count();
+    match format {
+        Format::Json => report_json(&refs),
+        Format::Text => {
+            println!("{} — FORM GSTR-3B", workbook.display());
+            println!("GSTIN {} · {} {}\n", form.gstin, form.month, form.fy);
+            if refs.is_empty() {
+                println!("no problems found");
+            } else {
+                print_findings(&refs);
+            }
+            let warnings = findings.len() - errors;
+            println!("{errors} error(s), {warnings} warning(s)");
+        }
+    }
+    if errors > 0 {
+        ExitCode::from(EXIT_PROBLEMS)
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
+fn run_generate_gstr3b(workbook: &Path, filing: &Filing, output: &Path) -> ExitCode {
+    let form = match load_gstr3b(workbook, filing) {
+        Ok(form) => form,
+        Err(code) => return code,
+    };
+    let findings = gst_core::gstr3b::validate(&form);
+    let errors: Vec<&Finding> = findings
+        .iter()
+        .filter(|f| f.severity == Severity::Error)
+        .collect();
+    if !errors.is_empty() {
+        // The utility refuses to export an invalid sheet; so does this.
+        print_findings(&errors);
+        eprintln!("{} error(s) — fix the form before generating", errors.len());
+        return ExitCode::from(EXIT_PROBLEMS);
+    }
+    let Some(period) = form.period else {
+        eprintln!("the form carries no valid FY/month");
+        return ExitCode::from(EXIT_PROBLEMS);
+    };
+    let body = gst_core::gstr3b::generate(&form, period).to_json();
+    if let Err(e) = std::fs::create_dir_all(output) {
+        eprintln!("cannot create {}: {e}", output.display());
+        return ExitCode::from(EXIT_UNUSABLE);
+    }
+    let path = output.join(gst_core::gstr3b::filename(&form));
+    if let Err(e) = std::fs::write(&path, &body) {
+        eprintln!("cannot write {}: {e}", path.display());
+        return ExitCode::from(EXIT_UNUSABLE);
+    }
+    println!("{}", path.display());
+    println!("{} bytes", body.len());
+    ExitCode::SUCCESS
+}
+
+fn print_findings(findings: &[&Finding]) {
+    for f in findings {
+        let tag = match f.severity {
+            Severity::Error => "error",
+            Severity::Warning => "warn ",
+        };
+        let place = match (&f.column, &f.rule) {
+            (Some(c), _) => format!("row {} · {c}", f.sheet_row),
+            (None, Some(r)) => format!("row {} · [{r}]", f.sheet_row),
+            _ => format!("row {}", f.sheet_row),
+        };
+        println!("{tag} {place}\n      {}", f.message);
+    }
+    println!();
+}
+
 /// Resolve the filing details, or explain what is wrong.
 fn context(filing: &Filing) -> Result<FilingContext, String> {
-    let period = ReturnPeriod::parse(&filing.period)
-        .ok_or_else(|| format!("--period '{}' is not MMYYYY, e.g. 072017", filing.period))?;
+    let gstin = filing
+        .gstin
+        .as_deref()
+        .ok_or("--gstin is required for GSTR-1 workbooks (a GSTR-3B workbook carries its own)")?;
+    let period_text = filing
+        .period
+        .as_deref()
+        .ok_or("--period is required for GSTR-1 workbooks (a GSTR-3B workbook carries its own)")?;
+    let period = ReturnPeriod::parse(period_text)
+        .ok_or_else(|| format!("--period '{period_text}' is not MMYYYY, e.g. 072017"))?;
 
-    if !gst_core::gstin::checksum_valid(&filing.gstin) {
+    if !gst_core::gstin::checksum_valid(gstin) {
         return Err(format!(
-            "--gstin '{}' is not a valid registration number (check digit failed)",
-            filing.gstin
+            "--gstin '{gstin}' is not a valid registration number (check digit failed)"
         ));
     }
 
     Ok(FilingContext {
-        supplier_gstin: filing.gstin.clone(),
+        supplier_gstin: gstin.to_owned(),
         period,
         is_sez: filing.sez,
         aato_over_5cr: filing.aato_over_5cr,
@@ -264,6 +408,13 @@ fn load(
 }
 
 fn run_validate(workbook: &Path, filing: &SectionFiling, format: Format) -> ExitCode {
+    if is_gstr3b_workbook(workbook) {
+        if filing.section.is_some() {
+            eprintln!("--section does not apply to a GSTR-3B workbook");
+            return ExitCode::from(EXIT_UNUSABLE);
+        }
+        return run_validate_gstr3b(workbook, &filing.filing, format);
+    }
     let (ctx, spec, rows) = match load(workbook, filing) {
         Ok(v) => v,
         Err(code) => return code,
@@ -375,6 +526,13 @@ fn report_json(findings: &[&Finding]) {
 }
 
 fn run_generate(workbook: &Path, filing: &SectionFiling, output: &Path) -> ExitCode {
+    if is_gstr3b_workbook(workbook) {
+        if filing.section.is_some() {
+            eprintln!("--section does not apply to a GSTR-3B workbook");
+            return ExitCode::from(EXIT_UNUSABLE);
+        }
+        return run_generate_gstr3b(workbook, &filing.filing, output);
+    }
     let (ctx, spec, rows) = match load(workbook, filing) {
         Ok(v) => v,
         Err(code) => return code,
@@ -493,6 +651,15 @@ fn run_diff(left: &Path, right: &[PathBuf], format: Format) -> ExitCode {
         }
     };
 
+    for side in [&left_json, &right_json] {
+        if side.get("ret_period").is_some() && side.get("fp").is_none() {
+            eprintln!(
+                "this looks like a GSTR-3B file (ret_period, no fp) — diffing GSTR-3B \
+                 returns is not supported yet"
+            );
+            return ExitCode::from(EXIT_UNUSABLE);
+        }
+    }
     let mut report = match gst_core::diff::diff(&left_json, &right_json) {
         Ok(report) => report,
         Err(e) => {
@@ -593,6 +760,12 @@ fn run_diff(left: &Path, right: &[PathBuf], format: Format) -> ExitCode {
 }
 
 fn run_summary(workbook: &Path, filing: &Filing, format: Format) -> ExitCode {
+    if is_gstr3b_workbook(workbook) {
+        eprintln!(
+            "GSTR-3B is a one-page form with no pre-upload summary — `gst validate` shows it"
+        );
+        return ExitCode::from(EXIT_UNUSABLE);
+    }
     let (ctx, run) = match load_workbook(workbook, filing) {
         Ok(loaded) => loaded,
         Err(code) => return code,
@@ -660,6 +833,14 @@ fn run_upload(
     cur_gt: Option<String>,
     output: &Path,
 ) -> ExitCode {
+    if is_gstr3b_workbook(workbook) {
+        if gt.is_some() || cur_gt.is_some() {
+            eprintln!("--gt/--cur-gt do not apply to GSTR-3B");
+            return ExitCode::from(EXIT_UNUSABLE);
+        }
+        println!("note: for GSTR-3B the generated JSON IS the upload file");
+        return run_generate_gstr3b(workbook, filing, output);
+    }
     let parse_turnover = |flag: &str, raw: Option<String>| match raw {
         None => Ok(None),
         Some(text) => gst_core::validate::parse_amount(&text)

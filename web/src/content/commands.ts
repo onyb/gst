@@ -9,7 +9,7 @@ export interface CommandEntry {
 export const COMMANDS: CommandEntry[] = [
   {
     name: "validate",
-    usage: "gst validate workbook.xlsx --gstin <GSTIN> --period <MMYYYY>",
+    usage: "gst validate workbook.xlsx [--gstin <GSTIN> --period <MMYYYY>]",
     description: "Report every problem with its sheet, row and column.",
     status: "ready",
   },

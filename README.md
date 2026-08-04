@@ -65,7 +65,12 @@ Or build from source: `cargo install --locked --path crates/gst-cli`.
 
 Work in progress. The MVP targets GSTR-1 and GSTR-3B. **All 30 GSTR-1
 worksheets are implemented**, including both tables every filer must submit
-(HSN summary and documents issued). GSTR-3B is next.
+(HSN summary and documents issued). **GSTR-3B is implemented too**: the whole
+form (tables 3.1, 3.1.1, 3.2, 4, 5, 5.1) reads, validates and generates its
+upload JSON, spec'd from the official V5.8 Excel VBA utility — its GSTIN and
+period come from the form itself, so `gst validate form.xlsx` needs no flags.
+The 3B oracle is Excel running VBA (no HTTP path), so its expected payload is
+source-derived pending a one-time capture session.
 
 Output is **verified byte-for-byte against GSTN's own tool** for a 30-section
 return — see [`fixtures/golden/`](fixtures/golden/) and
@@ -90,7 +95,7 @@ which we have not tested.
 | Advances (AT, ATA, ATADJ, ATADJA) | 4 | ✅ |
 | Nil-rated and exempt (EXEMP) | 1 | ✅ |
 | E-commerce (ECO and amendments) | 10 | ✅ |
-| GSTR-3B | — | ⏳ |
+| GSTR-3B | 1 (whole form) | ✅ (oracle capture pending) |
 
 | Command | Status |
 |---|---|
