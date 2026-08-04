@@ -99,6 +99,21 @@ impl Workbook {
 
     /// Read one section's sheet, using the sheet name and row offsets the spec
     /// declares.
+    /// Names of the sheets in the workbook, for return-type detection.
+    pub fn sheet_names(&self) -> Vec<String> {
+        self.sheets.sheet_names().to_vec()
+    }
+
+    /// One sheet's full range, by name.
+    pub(crate) fn range(&mut self, sheet: &str) -> Result<calamine::Range<Data>, ImportError> {
+        self.sheets
+            .worksheet_range(sheet)
+            .map_err(|_| ImportError::SheetMissing {
+                sheet: sheet.to_owned(),
+                available: self.sheets.sheet_names().to_vec(),
+            })
+    }
+
     pub fn read(&mut self, spec: &SectionSpec) -> Result<Vec<Row>, ImportError> {
         let source = spec
             .source
@@ -286,7 +301,7 @@ fn collect_rows<C: RawCells>(
 /// Dates are deliberately left as their serial number: the validator already
 /// accepts serials and owns the conversion, so the calendar rules live in one
 /// place rather than being split across the reader.
-fn cell_text(cell: &Data) -> String {
+pub(crate) fn cell_text(cell: &Data) -> String {
     match cell {
         Data::Empty => String::new(),
         Data::String(s) => s.trim().to_owned(),

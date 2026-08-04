@@ -838,7 +838,7 @@ pub fn tax_export(record: &Record, _ctx: &FilingContext) -> TaxSplit {
 /// Reproducing that means expanding the double to its exact decimal value and
 /// rounding half-away-from-zero there. `from_f64_retain` gives that exact
 /// expansion, so the midpoint test lands on the same side as the reference's.
-fn round2(value: f64) -> Decimal {
+pub(crate) fn round2(value: f64) -> Decimal {
     Decimal::from_f64_retain(value)
         .unwrap_or_default()
         .round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero)

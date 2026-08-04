@@ -8,6 +8,7 @@ pub mod date;
 pub mod diff;
 pub mod generate;
 pub mod gstin;
+pub mod gstr3b;
 pub mod import;
 pub mod masters;
 pub mod payload;
