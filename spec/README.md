@@ -194,8 +194,13 @@ deterministic `part{n}of{m}` names.
   per-section counts and the four tax-head totals, with the official row
   order, verbatim labels, credit-note sign flip and without-payment zeroing
   rules)
-- `gstr3b/` — form table definitions (3.1, 3.1.1, 3.2, 4, 5, 5.1),
-  cross-table rules, payload shape
+- `gstr3b/` — the whole-form return, from the V5.8 Excel VBA utility:
+  `form.json` (cell map for tables 3.1/3.1.1/4/5/5.1/3.2, validation rules,
+  period gates, payload emission order, recorded divergences — the utility's
+  broken negatives gate, its byte-level output noise we deliberately do not
+  reproduce) and `pos.json` (the verbatim 3.2 place-of-supply dropdown, code
+  28 absent and misspellings preserved, plus the FY list). Like the GSTR-1
+  whole-return documents, these carry no meta-schema
 
 Spec files are versioned against the official artifact versions above; when
 GSTN ships a new tool version, diffs land here first.

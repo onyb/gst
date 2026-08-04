@@ -1,0 +1,149 @@
+{
+  "form": "gstr3b",
+  "title": "FORM GSTR-3B — monthly summary return",
+  "provenance": {
+    "excel_utility": "GSTR3B_Excel_Utility_V5.8.xlsm",
+    "source": "Sheet1 (worksheet 'GSTR-3B') VBA: Validate_json, export_in_json_format, isValidAmount, isAfterPartCGoLive, isAfterEcoSupGoLive, removeInterSupValidation; layouts and lists read from the workbook itself.",
+    "v56_to_v58_diff": "One line: removeInterSupValidation() moved its first arm from (yr>=2025 && mnthIndex>=1) to (yr>=2025 && mnthIndex>=8) — the 3.2 auto-population (and inter_sup drop) deferred from April 2025 to November 2025.",
+    "verified_on": "2026-08-04"
+  },
+  "sheet": "GSTR-3B",
+  "header": {
+    "gstin": { "cell": "C5" },
+    "legal_name": { "cell": "C6", "exported": false, "validated": false },
+    "fy": { "cell": "G5", "values_ref": "spec/gstr3b/pos.json#financial_years" },
+    "month": { "cell": "G6", "fiscal_order": ["April", "May", "June", "July", "August", "September", "October", "November", "December", "January", "February", "March"] }
+  },
+  "gates": {
+    "table_311": { "from_period": "072022", "note": "3.1.1 rows unhide and eco_dtls is emitted from July 2022 (CR-21773C: yr==2022 && mnthIndex>=4 || yr>=2023)." },
+    "inter_sup_dropped": { "from_period": "112025", "note": "CR28570A/V5.8: 3.2 is auto-populated from GSTR-1/1A/IFF, manual entry locked, the inter_sup block omitted from the JSON and its IGST rule skipped. Literal: (yr>=2025 && mnthIndex>=8) || (yr>=2026 && any month) — contiguous from November 2025." }
+  },
+  "negatives": {
+    "outward": {
+      "from_period": "092024",
+      "applies_to": "every input cell of tables 3.1, 3.1.1 and the whole 3.2 amount region",
+      "divergence": "DELIBERATE DIVERGENCE. The utility's isAfterPartCGoLive() is literally (yr == 2024 && mnthIndex >= 6) — no yr >= 2025 arm — so V5.8 REJECTS negatives in these tables for FY 2025-26 onward while its own cell validations and the portal accept them. The window here is open-ended from September 2024, which is what the gate obviously meant. (A second bug makes the utility's whitelist moot when the gate IS live: 'IsInArray(a,rng) Or IsInArray(a,rng2) Or IsInArray(a,rng3) >= 0' parses as ...Or (x >= 0), and IsInArray returns -1 = truthy when absent, so every cell passes as negative-allowed.)"
+    },
+    "itc": {
+      "from_period": "012023",
+      "cells": ["C31", "C32", "C33", "C34", "C35", "C42", "D31", "D32", "D33", "D34", "D35", "D42", "E31", "E32", "E33", "E34", "E35", "E42", "F31", "F32", "F33", "F34", "F35", "F42"],
+      "note": "The working ElseIf whitelist, verbatim: table 4(A) rows 31-35 (all four columns, including the structurally blocked D31/E31/D32/E32) plus 4(D)(2) row 42. Rows 37-38 (ITC reversed) and row 41 (4(D)(1)) are NOT negative-allowed. The gate is (yr==2022 && mnthIndex>=10) || yr>=2023 — mnthIndex is FISCAL (April=1), so index 10 is JANUARY: negatives from January 2023, not October 2022."
+    },
+    "never": "tables 5 (D48:E49), 5.1 interest (C65:F65), late fee (D66:E66), itc_rev (C37:F38), itc_inelg row 41 (C41:F41)"
+  },
+  "sup_details": {
+    "note": "Table 3.1 rows 11-15. Emission writes all five keys per row; cells absent below are structurally blocked (merged/locked) and emit 0. F11 and F14 are sheet formulas =E11/=E14 (SGST mirrors CGST).",
+    "rows": [
+      { "key": "osup_det", "row": 11, "cells": { "txval": "C11", "iamt": "D11", "camt": "E11", "samt": "F11", "csamt": "G11" }, "formulas": { "F11": "E11" } },
+      { "key": "osup_zero", "row": 12, "cells": { "txval": "C12", "iamt": "D12", "csamt": "G12" } },
+      { "key": "osup_nil_exmp", "row": 13, "cells": { "txval": "C13" } },
+      { "key": "isup_rev", "row": 14, "cells": { "txval": "C14", "iamt": "D14", "camt": "E14", "samt": "F14", "csamt": "G14" }, "formulas": { "F14": "E14" } },
+      { "key": "osup_nongst", "row": 15, "cells": { "txval": "C15" } }
+    ]
+  },
+  "eco_dtls": {
+    "gate": "table_311",
+    "eco_sup": { "row": 22, "cells": { "txval": "C22", "iamt": "D22", "camt": "E22", "samt": "F22", "csamt": "G22" }, "formulas": { "F22": "E22" } },
+    "eco_reg_sup": { "row": 23, "cells": { "txval": "C23" } }
+  },
+  "itc_elg": {
+    "note": "Emission writes iamt/camt/samt/csamt for EVERY ty row, blocked or blank cells emitting 0 — IMPG/IMPS carry camt:0, samt:0. E33/E34/E35/E37/E41/E42 are =D formulas; E38 is the one real SGST input in table 4.",
+    "itc_avl": [
+      { "ty": "IMPG", "row": 31, "cells": { "iamt": "C31", "csamt": "F31" } },
+      { "ty": "IMPS", "row": 32, "cells": { "iamt": "C32", "csamt": "F32" } },
+      { "ty": "ISRC", "row": 33, "cells": { "iamt": "C33", "camt": "D33", "samt": "E33", "csamt": "F33" }, "formulas": { "E33": "D33" } },
+      { "ty": "ISD", "row": 34, "cells": { "iamt": "C34", "camt": "D34", "samt": "E34", "csamt": "F34" }, "formulas": { "E34": "D34" } },
+      { "ty": "OTH", "row": 35, "cells": { "iamt": "C35", "camt": "D35", "samt": "E35", "csamt": "F35" }, "formulas": { "E35": "D35" } }
+    ],
+    "itc_rev": [
+      { "ty": "RUL", "row": 37, "cells": { "iamt": "C37", "camt": "D37", "samt": "E37", "csamt": "F37" }, "formulas": { "E37": "D37" } },
+      { "ty": "OTH", "row": 38, "cells": { "iamt": "C38", "camt": "D38", "samt": "E38", "csamt": "F38" } }
+    ],
+    "itc_net": {
+      "cached_cells": { "iamt": "C39", "camt": "D39", "samt": "E39", "csamt": "F39" },
+      "formula": "per column: SUM(ROUND(each itc_avl cell, 2)) - SUM(ROUND(each itc_rev cell, 2))",
+      "note": "The VBA exports the CACHED C39:F39 formula results, rounded again. This implementation computes the formula (identical whenever the sheet formulas are intact) and warns when a cached value drifts from it."
+    },
+    "itc_inelg": [
+      { "ty": "RUL", "row": 41, "cells": { "iamt": "C41", "camt": "D41", "samt": "E41", "csamt": "F41" }, "formulas": { "E41": "D41" } },
+      { "ty": "OTH", "row": 42, "cells": { "iamt": "C42", "camt": "D42", "samt": "E42", "csamt": "F42" }, "formulas": { "E42": "D42" } }
+    ]
+  },
+  "inward_sup": {
+    "note": "Blank cells are force-written to 0 before emission, so both rows always appear with both keys.",
+    "rows": [
+      { "ty": "GST", "row": 48, "cells": { "inter": "D48", "intra": "E48" } },
+      { "ty": "NONGST", "row": 49, "cells": { "inter": "D49", "intra": "E49" } }
+    ]
+  },
+  "intr_ltfee": {
+    "intr_details": { "row": 65, "cells": { "iamt": "C65", "camt": "D65", "samt": "E65", "csamt": "F65" } },
+    "ltfee_details": {
+      "row": 66,
+      "cells": { "camt": "D66", "samt": "E66" },
+      "raw": true,
+      "omit_when_blank": true,
+      "note": "The late-fee row is HIDDEN in the sheet yet exported; the only keys emitted UNROUNDED and omitted when blank (both blank -> an empty object)."
+    }
+  },
+  "pos_region": {
+    "first_row": 88,
+    "last_row": 124,
+    "pos_column": "B",
+    "pairs": {
+      "unreg_details": { "txval": "C", "iamt": "D" },
+      "comp_details": { "txval": "E", "iamt": "F" },
+      "uin_details": { "txval": "G", "iamt": "H" }
+    },
+    "pos_list_ref": "spec/gstr3b/pos.json#entries",
+    "pos_payload_form": "the two-digit prefix of the dropdown text, emitted as a STRING",
+    "inclusion": "a row enters a sub-array iff its POS is non-empty AND at least one of that pair's two cells is non-empty; the blank member is coerced to 0 (the VBA writes the 0 back into the sheet). Empty sub-arrays are still emitted."
+  },
+  "rules": [
+    { "id": "gstr3b.gstin_valid", "severity": "error",
+      "checks": "length exactly 15; first two characters numeric, < 39 and != 28; regex [0-9]{2}[a-zA-Z]{5}[0-9]{4}[a-zA-Z][1-9A-Za-z][Zz1-9A-Ja-j][0-9a-zA-Z] (unanchored in the VBA, but the length check makes it equivalent to anchored). NO check-digit verification.",
+      "message": "Please enter valid GSTIN" },
+    { "id": "gstr3b.gstin_checksum", "severity": "warning",
+      "note": "OURS, not the utility's: the mod-36 check digit the rest of this project validates. A GSTIN passing the utility's rules but failing the checksum is almost certainly a typo the portal will reject." },
+    { "id": "gstr3b.fy_selected", "severity": "error", "message": "Please select return file year" },
+    { "id": "gstr3b.month_selected", "severity": "error", "message": "Please select return file month" },
+    { "id": "gstr3b.amount_valid", "severity": "error",
+      "checks": "blank is valid (exports 0); otherwise numeric and within [min, 9999999999999.99], min per the negatives windows. The utility's error text promises a two-decimal-places check that its code never performs; decimals beyond 2 are accepted and rounded at export.",
+      "message": "Please enter a valid amount. Field accepts only numeric value. Maximum: 13 digits with two decimal places." },
+    { "id": "gstr3b.pos_without_amounts", "severity": "error",
+      "message": "Please enter Taxable value or amount of integrated tax in Table 3.2 for the selected Place of Supply" },
+    { "id": "gstr3b.amounts_without_pos", "severity": "error",
+      "message": "Please select Place of Supply in Table 3.2 for which Taxable value or amount of integrated tax is entered" },
+    { "id": "gstr3b.pos_duplicate", "severity": "error",
+      "note": "The utility blocks duplicates live (Worksheet_Change + Application.Undo); on a finished workbook this reports instead.",
+      "message": "Duplicate entries not allowed for Place of Supply(State/UT)" },
+    { "id": "gstr3b.pos_unknown", "severity": "error",
+      "note": "OURS: the utility's dropdown makes an unknown POS untypeable; a hand-built workbook can carry one." },
+    { "id": "gstr3b.inter_sup_igst_within_31", "severity": "error", "skipped_from_period": "112025",
+      "checks": "SUM(D88:D124) + SUM(F88:F124) + SUM(H88:H124) <= D11 + D22. From 072022 the rule also requires the 3.2 total to be non-zero before firing (igstTotal <> 0); before 072022 the comparison is against D11 alone with no zero guard. Only IGST is checked — taxable value never is.",
+      "message": "Total amount of Integrated Tax in section 3.2 should be less than or equal to the sum of Integrated tax declared in section 3.1(a) and 3.1.1(i)" },
+    { "id": "gstr3b.sgst_mirrors_cgst", "severity": "warning",
+      "note": "OURS: the utility enforces SGST == CGST purely by sheet formulas (F11, F14, F22, E33, E34, E35, E37, E41, E42). A workbook with broken formulas exports the mismatch verbatim — this warns instead of silently shipping it. E38 is excluded: it is a genuine input." },
+    { "id": "gstr3b.itc_net_drift", "severity": "warning",
+      "note": "OURS: cached C39:F39 disagreeing with the recomputed itc_net formula — a broken-formula signal." }
+  ],
+  "emission": {
+    "order": ["gstin", "ret_period", "sup_details", "eco_dtls", "itc_elg", "inward_sup", "intr_ltfee", "inter_sup"],
+    "ret_period": "MMYYYY; January/February/March take the financial year's END year, all other months its start year",
+    "defaults": "every fixed-block key is always emitted, blank cells as 0; only ltfee_details keys and the inter_sup block are ever omitted",
+    "rounding": "Application.WorksheetFunction.Round(x, 2) — half away from zero on the cell's double value — on every amount except the two late-fee cells",
+    "clean_json_divergence": "DELIBERATE DIVERGENCE: this implementation emits compact clean JSON (payload writer) in the same key order. The utility's file carries CRLF line endings, stray blank lines, a bare CR inside empty braces/brackets left by its trailing-comma chop, and a space before the gstin colon only — all legal-JSON whitespace noise. Captured files are compared semantically (parse both sides), not byte-for-byte."
+  },
+  "filename": {
+    "pattern": "{month}_{fy_start_year}-GSTR3B{gstin}-Details.json",
+    "example": "January_2024-GSTR3B27AAPFU0939F1ZV-Details.json",
+    "note": "The month is the dropdown text verbatim; the year is the FY START year even for January-March, so the name and ret_period disagree by one year in those months. The utility writes under %USERPROFILE%\\Desktop\\GSTR\\GSTR3B_JSON\\{month}\\; this implementation writes into --output."
+  },
+  "notes": [
+    { "kind": "quirk", "text": "Legal name (C6) is entered on the form but never validated and never exported." },
+    { "kind": "quirk", "text": "The utility has no import path at all — it is write-only, and errors from the portal stay on the portal." },
+    { "kind": "quirk", "text": "The FY dropdown ends at 2026-27: the workbook expires. Table 5's inter-state Total (D50) is a hardcoded literal 0. Hidden rows 74-82 ship with leftover test data. The POS list omits code 28 and misspells 31-Lakshdweep and 36-Telengana." },
+    { "kind": "quirk", "text": "A GSTIN with state code 97 (Other Territory) can never validate (prefix must be < 39), although 97 is a selectable POS in 3.2." },
+    { "kind": "divergence", "text": "gstr3b.gstin_checksum, gstr3b.pos_unknown, gstr3b.sgst_mirrors_cgst and gstr3b.itc_net_drift are additional warnings this implementation raises; the utility has no equivalent." }
+  ]
+}
